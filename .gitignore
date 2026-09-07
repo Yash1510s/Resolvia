@@ -43,7 +43,7 @@ coverage.json
 # ---------- Graft (AI context graph) ----------
 /graft/
 
-# ---------- Agent / Dev Tools ----------
+# ---------- Agent / Dev Tools & Internal Documentation ----------
 .agents/
 .claude/
 .mcp.json
@@ -54,6 +54,8 @@ frontend/AGENTS.md
 frontend/CLAUDE.md
 frontend/app/components/AgentationProvider.tsx
 frontend/public/hero-reference.jpg
+source_code/
+*.docx
 
 # ---------- IDE / Editor ----------
 .vscode/
