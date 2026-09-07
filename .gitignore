@@ -1,0 +1,75 @@
+# ================================
+# Resolvia - Git Ignore
+# ================================
+
+# ---------- Environment / Secrets ----------
+.env
+.env.*
+!.env.example
+
+# ---------- Node.js ----------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---------- Frontend / Next.js ----------
+.next/
+out/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---------- Blockchain / Hardhat ----------
+artifacts/
+cache/
+typechain-types/
+coverage.json
+
+# ---------- Graft (AI context graph) ----------
+/graft/
+
+# ---------- Agent / Dev Tools ----------
+.agents/
+.claude/
+.mcp.json
+.ignore
+AGENTS.md
+CLAUDE.md
+frontend/AGENTS.md
+frontend/CLAUDE.md
+frontend/app/components/AgentationProvider.tsx
+frontend/public/hero-reference.jpg
+
+# ---------- IDE / Editor ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- Logs ----------
+*.log
+
+# ---------- Temporary files ----------
+*.tmp
+*.temp
+
