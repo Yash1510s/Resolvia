@@ -1,0 +1,19 @@
+{
+  "name": "resolvia",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-Assisted Decentralized Dispute Resolution research prototype",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yash1510s/Resolvia.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Yash1510s/Resolvia/issues"
+  },
+  "homepage": "https://github.com/Yash1510s/Resolvia#readme",
+  "scripts": {},
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
