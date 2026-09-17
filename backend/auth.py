@@ -333,13 +333,52 @@ def _valid_email(email: str) -> bool:
     return "@" in email and "." in email.split("@")[-1] and len(email) >= 5
 
 
+
+# ── Email delivery (optional SMTP; falls back to devCode in dev) ────────────
+
+def _smtp_configured() -> bool:
+    return bool(os.environ.get("SMTP_HOST"))
+
+
+def _send_otp_email(email: str, code: str) -> None:
+    """Send the OTP over SMTP. Raises on failure (caller decides to abort)."""
+    import smtplib
+    from email.mime.text import MIMEText
+
+    host = os.environ["SMTP_HOST"]
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    user = os.environ.get("SMTP_USER", "")
+    password = os.environ.get("SMTP_PASS", "")
+    sender = os.environ.get("SMTP_FROM", user or "resolvia@localhost")
+    verify_url = os.environ.get("OTP_VERIFY_URL", "https://resolvia.app/verify-otp")
+
+    msg = MIMEText(
+        f"Your Resolvia verification code is {code}.\n\n"
+        f"It expires in {OTP_TTL_SECONDS // 60} minutes. "
+        f"If you did not request this, you can ignore this email.\n\n"
+        f"Resolvia"
+    )
+    msg["Subject"] = "Your Resolvia verification code"
+    msg["From"] = sender
+    msg["To"] = email
+
+    with smtplib.SMTP(host, port, timeout=15) as server:
+        server.ehlo()
+        try:
+            server.starttls()
+            server.ehlo()
+        except smtplib.SMTPNotSupportedError:
+            pass  # some local relays have no TLS
+        if user and password:
+            server.login(user, password)
+        server.sendmail(sender, [email], msg.as_string())
+
+
 @router.post("/auth/otp/request")
 def otp_request(body: OtpRequestIn):
     email = body.email.lower().strip()
     if not _valid_email(email):
         raise HTTPException(status_code=400, detail="Enter a valid email address")
-    code = f"{secrets.randbelow(1_000_000):06d}"
-    code_hash = hashlib.sha256(code.encode()).hexdigest()
     now = time.time()
     with _db() as conn:
         recent = conn.execute(
@@ -348,15 +387,38 @@ def otp_request(body: OtpRequestIn):
         ).fetchone()
         if recent:
             raise HTTPException(status_code=429, detail="Slow down — try again in a minute")
-        conn.execute("DELETE FROM otps WHERE email=?", (email,))
-        conn.execute(
-            "INSERT INTO otps (email, code_hash, expires_at, attempts, created_at) VALUES (?,?,?,?,?)",
-            (email, code_hash, now + OTP_TTL_SECONDS, 0, now),
-        )
-    print(f"[auth] OTP for {email}: {code}")
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    code_hash = hashlib.sha256(code.encode()).hexdigest()
+
     out = {"status": "OTP_SENT", "email": email}
-    if APP_ENV == "dev":
-        out["devCode"] = code  # Dev only: shows the code so demos work without an email server
+    if _smtp_configured():
+        # Real delivery: persist the code ONLY after the email is sent,
+        # so a user can never be stuck with a code they never received.
+        try:
+            _send_otp_email(email, code)
+        except Exception as e:
+            print(f"[auth] SMTP delivery failed for {email}: {e}")
+            raise HTTPException(status_code=502, detail="Could not deliver the verification email — try again shortly.")
+        with _db() as conn:
+            conn.execute("DELETE FROM otps WHERE email=?", (email,))
+            conn.execute(
+                "INSERT INTO otps (email, code_hash, expires_at, attempts, created_at) VALUES (?,?,?,?,?)",
+                (email, code_hash, now + OTP_TTL_SECONDS, 0, now),
+            )
+        print(f"[auth] OTP emailed to {email}")
+    else:
+        if APP_ENV != "dev":
+            raise HTTPException(status_code=503, detail="Email delivery is not configured on this server (set SMTP_HOST etc.).")
+        # Dev only: show the code so demos work without an email server.
+        with _db() as conn:
+            conn.execute("DELETE FROM otps WHERE email=?", (email,))
+            conn.execute(
+                "INSERT INTO otps (email, code_hash, expires_at, attempts, created_at) VALUES (?,?,?,?,?)",
+                (email, code_hash, now + OTP_TTL_SECONDS, 0, now),
+            )
+        print(f"[auth] OTP for {email}: {code}")
+        out["devCode"] = code
     return out
 
 
