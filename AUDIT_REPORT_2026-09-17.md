@@ -28,10 +28,28 @@
 | P1-12 | "Juror Carol" identity | ✅ **FIXED** — juror-01 = "You (anonymous)", PENDING_COMMIT (full commit→reveal→verdict demo works) |
 | P2-5/6/7/8/9/10 | counter / dangling history / "Today" label / displayRole / vote bias / blue ring | ✅ **FIXED** (all six) |
 
-**Still open (B3 remainder + B5, deliberate next batches):**
-- Real on-chain anchoring from the wizard (EvidenceRegistry write via /api/rpc) — *medium, do next*
-- Proof Verifier: real re-hash of stored content (vs string lookup) — *medium, do next*
-- B5 hardening: CORS allowlist, OTP off-by-one, JWT refresh, keys out of bundle, CI, Playwright/Vitest — *after infra decisions (PAT/LLM provider)*
+## 🚀 REAL BUILD STATUS — 17 Sep (demo → real, Request #10)
+
+Direction given: *"demo gyaa khatam — proper bananaa hai."* Simulations replaced by real implementations wherever technically possible in-sandbox. Only genuinely-pending items remain labeled Prototype/Testnet.
+
+| # | Item | Status | Proof |
+|---|------|--------|-------|
+| R1 | **Real on-chain evidence anchoring** | ✅ **DONE** | Wizard submit signs a real `registerEvidence` tx (user's assigned wallet via backend, or demo account for guests). E2E: `POST /api/wallet/evidence/anchor` → `ANCHORED` txHash + block; hash + block visible in case audit trail & success screen |
+| R2 | **Real Proof Verifier** | ✅ **DONE** | Public `GET /api/evidence/verify` reads the chain (`eth_getLogs` on EvidenceRegistry): real hash → `ANCHORED` + tx/block; unknown hash → `NOT_FOUND`. Content re-hash from original bytes (session cache) + genuine 1-bit tamper demo (hash visibly breaks) |
+| R3 | **Real per-user persistence** | ✅ **DONE** | `GET/PUT /api/state` (per-user SQLite). Logged-in accounts hydrate from backend on login, mirror every change back (debounced). Round-trip verified: 404→PUT→GET→401 |
+| R4 | **Real deploy path** | ✅ **DONE** | `blockchain/scripts/deploy-sepolia.js` — env-key Sepolia deploy, chainId guard, wiring readback sanity, `sepolia.json` manifest + Etherscan links. (Runs once user provides a funded Sepolia key) |
+| R5 | **CI + unit tests** | ✅ **DONE** | `.github/workflows/ci.yml` (frontend tsc+vitest+build, backend API-surface, contracts hardhat test). **17/17 Vitest units passing**: real WebCrypto SHA-256 vs Node crypto (NIST vector, 1-bit tamper), commit-reveal packing byte-identity + replay-proof binding |
+| R6 | **Real email OTP** | ✅ **DONE** | SMTP delivery (any relay), persist-after-send, `devCode` only in dev, 503 in prod without SMTP. `env.example` documents the full config surface |
+
+**Honesty labels now accurate:** demo-dataset evidence is shown as "DEMO (NOT ANCHORED)"; locally-filed cases are "ON-CHAIN ANCHORED" with real tx/block; on-chain copy says "local testnet (Sepolia in production)".
+
+**Still genuinely pending (need user inputs — see PROJECT_REPORT §Next):**
+- LLM provider + API key → advisory engine currently deterministic rules (labeled as such)
+- Google OAuth client IDs (backend endpoint ready)
+- Sepolia private key + gas → run `deploy-sepolia.js`
+- SMTP credentials → real OTP email
+- IPFS/Pinata keys → real pinning (currently CID-only mode)
+- GitHub PAT → push repo + enable CI
 
 **Infra note:** sandbox preview host changed to `3000-ig56cyynhn77r9e0lehhb.e2b.app` — added to `allowedDevOrigins` (both hosts now allowed). If the sandbox resets again, the new host must be re-added (same one-liner).
 

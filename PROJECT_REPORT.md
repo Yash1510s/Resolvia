@@ -148,13 +148,24 @@ Highlights (all verified implemented, not stubs):
 
 ---
 
-## 6. Next Actions (concrete, in order)
+## 6. Real Build — what's REAL now vs still Prototype (17 Sep)
 
-1. **You:** share a GitHub PAT (or push manually) → repo live.
-2. **You:** provide Google OAuth client ID (+ redirect URI `https://<your-domain>/login`).
-3. **You:** decide LLM provider (API key vs Ollama) → I wire it end-to-end in one pass.
-4. **Me (on approval):** BSA §63 certificate template rewrite in LegalExportModal.
-5. **Me (on approval):** Sepolia deployment script + env config for real testnet.
+**REAL (implemented + verified, no simulation):**
+- On-chain evidence anchoring: wizard signs a genuine `registerEvidence` tx (assigned wallet for logged-in users, demo account for guests) → real txHash + block in the case.
+- On-chain verification: public chain read (`eth_getLogs`) confirms/ denies an anchor; content re-hash + genuine 1-bit tamper demo in the Proof Verifier & Evidence Locker.
+- Per-user backend persistence: workspace state mirrors to SQLite per account (login hydrates, changes sync back).
+- Email OTP: real SMTP delivery (persist-after-send); dev-only fallback.
+- Sepolia deploy script + CI (tsc, 17 Vitest units, backend API-surface, contracts) + `env.example`.
+
+**STILL PROTOTYPE — honestly labeled, unblocks in this order:**
+1. **You:** GitHub PAT (or push) → CI goes live.
+2. **You:** Google OAuth client ID (redirect `https://<domain>/login`).
+3. **You:** LLM provider + key (or Ollama) → advisory engine becomes LLM-backed (currently deterministic rules, labeled).
+4. **You:** funded Sepolia key → run `npx hardhat run scripts/deploy-sepolia.js --network sepolia`.
+5. **You:** SMTP credentials → live OTP email.
+6. **You:** IPFS/Pinata keys → real pinning (currently CID-only mode).
+
+**Open (mine, on approval):** BSA §63 two-signatory certificate template rewrite in LegalExportModal.
 
 ---
 
