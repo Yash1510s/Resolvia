@@ -46,6 +46,43 @@ export function CommitRevealVoting({
     if (currentJuror?.status === 'REVEALED') setPhase('reveal');
   }, [currentJuror]);
 
+  // Deadline enforcement (mirrors VotingManager.sol: commit window closes at the
+  // deadline; reveals get a +1 day grace window). Gated on mount to avoid
+  // SSR/client clock mismatches.
+  const [nowMs, setNowMs] = useState<number | null>(null);
+  useEffect(() => {
+    setNowMs(Date.now());
+    const t = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  const deadlineMs = new Date(votingDeadline).getTime();
+  const commitClosed = nowMs !== null && nowMs > deadlineMs;
+  const revealClosed = nowMs !== null && nowMs > deadlineMs + 86_400_000;
+
+  // Real cryptographic verification before reveal: recompute SHA-256(vote : salt)
+  // and compare with the locked commitment. Reveal is blocked on mismatch.
+  const [verify, setVerify] = useState<'idle' | 'checking' | 'match' | 'mismatch'>('idle');
+  useEffect(() => {
+    if (phase !== 'reveal' || !currentJuror || currentJuror.status !== 'COMMITTED') {
+      setVerify('idle');
+      return;
+    }
+    const v = currentJuror.revealedVote || vote;
+    const s = currentJuror.salt || salt;
+    if (!s) {
+      setVerify('idle');
+      return;
+    }
+    setVerify('checking');
+    let live = true;
+    computeVoteCommitment(v, s).then((h) => {
+      if (live) setVerify(h.toLowerCase() === (currentJuror.commitmentHash || '').toLowerCase() ? 'match' : 'mismatch');
+    });
+    return () => {
+      live = false;
+    };
+  }, [phase, currentJuror, vote, salt]);
+
   const handleCommitSubmit = async () => {
     if (!currentJuror || !salt) return;
     setProcessing('commit');
@@ -93,7 +130,7 @@ export function CommitRevealVoting({
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Jury Panel ({jurors.length})
             </h4>
-            <span className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500">
+            <span suppressHydrationWarning className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500">
               <Hourglass className="w-3.5 h-3.5 text-amber-500" />
               Deadline: {new Date(votingDeadline).toLocaleString('en-IN')}
             </span>
@@ -285,7 +322,7 @@ export function CommitRevealVoting({
                     value={salt}
                     onChange={(e) => setSalt(e.target.value)}
                     placeholder="e.g. 7f9c2e81a4b5"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-xs font-mono transition-all bg-white"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-xs font-mono transition-all bg-white"
                   />
                 </div>
 
@@ -302,10 +339,15 @@ export function CommitRevealVoting({
                   )}
                 </div>
 
+                {commitClosed && (
+                  <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 text-[10.5px] font-semibold text-slate-600">
+                    Commit window closed — no new commitments are accepted. Reveals are still possible within the +1 day grace window.
+                  </div>
+                )}
                 <button
                   onClick={handleCommitSubmit}
-                  disabled={!salt || processing === 'commit'}
-                  className="w-full p-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black transition-all cursor-pointer shadow-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  disabled={commitClosed || !salt || processing === 'commit'}
+                  className="w-full p-3.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black transition-all cursor-pointer shadow-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {processing === 'commit' ? (
                     <>
@@ -336,23 +378,62 @@ export function CommitRevealVoting({
                   </p>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-emerald-50/50 border border-emerald-200/70">
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-700 mb-2">
+                <div
+                  className={`p-3.5 rounded-xl border ${
+                    verify === 'mismatch'
+                      ? 'bg-rose-50 border-rose-200'
+                      : verify === 'match'
+                      ? 'bg-emerald-50/50 border-emerald-200/70'
+                      : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <p
+                    className={`text-[9px] font-bold uppercase tracking-wider mb-2 ${
+                      verify === 'mismatch' ? 'text-rose-600' : verify === 'match' ? 'text-emerald-700' : 'text-slate-500'
+                    }`}
+                  >
                     Verification Check
                   </p>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <p className="text-[11px] text-emerald-800 leading-relaxed">
-                      Salt <span className="font-mono font-bold">{currentJuror.salt || '—'}</span>{' '}
-                      re-computed against the locked hash. <strong>MATCH CONFIRMED</strong> — the
-                      revealed vote is exactly what you committed.
+                  {verify === 'checking' && (
+                    <p className="text-[11px] text-slate-500 leading-relaxed flex items-center gap-2">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Re-computing SHA-256(vote : salt) against the locked
+                      commitment…
                     </p>
-                  </div>
+                  )}
+                  {verify === 'idle' && (
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      Verification runs automatically once your commitment and salt are available.
+                    </p>
+                  )}
+                  {verify === 'match' && (
+                    <div className="flex items-start gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-emerald-800 leading-relaxed">
+                        Salt <span className="font-mono font-bold">{currentJuror.salt || '—'}</span> re-computed against the
+                        locked hash. <strong>MATCH CONFIRMED</strong> — the revealed vote is exactly what you committed.
+                      </p>
+                    </div>
+                  )}
+                  {verify === 'mismatch' && (
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-rose-700 leading-relaxed">
+                        <strong>MISMATCH</strong> — the revealed vote does not match the locked commitment. Reveal is
+                        blocked; a mismatched reveal would be rejected on-chain.
+                      </p>
+                    </div>
+                  )}
                 </div>
+
+                {revealClosed && (
+                  <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 text-[10.5px] font-semibold text-slate-600">
+                    Reveal window closed (grace period elapsed). This commitment will be recorded as forfeited.
+                  </div>
+                )}
 
                 <button
                   onClick={handleRevealSubmit}
-                  disabled={processing === 'reveal'}
+                  disabled={processing === 'reveal' || revealClosed || verify !== 'match'}
                   className="w-full p-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all cursor-pointer shadow-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {processing === 'reveal' ? (

@@ -45,7 +45,7 @@ const NAV: { id: Section; label: string; sub: string; icon: React.ReactNode }[] 
 ];
 
 export default function SettingsPage() {
-  const { profilePrefs, setProfilePrefs, availability, setAvailability } = useApp();
+  const { profilePrefs, setProfilePrefs, availability, setAvailability, resetDemoData } = useApp();
   const { user: authUser } = useAuth();
   const [section, setSection] = useState<Section>('account');
   const [account, setAccount] = useState<{ name: string; email: string; institution: string; location: string; role: import('../../types').RoleType; bio: string }>({
@@ -460,6 +460,16 @@ export default function SettingsPage() {
                     </div>
                   ))}
                 </div>
+              </Card>
+              <Card className="p-5 border-amber-100">
+                <h2 className="text-[15px] font-black text-amber-600 mb-1">Demo Data</h2>
+                <p className="text-[11px] text-slate-400 mb-4">
+                  Your in-app progress (cases, votes, jury decisions, balance) is saved locally so a refresh doesn&apos;t lose it.
+                  Reset restores the original demo dataset and re-opens all deadlines.
+                </p>
+                <button onClick={resetDemoData} className="px-4 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 text-xs font-bold">
+                  Reset demo data
+                </button>
               </Card>
               <Card className="p-5 border-rose-100">
                 <h2 className="text-[15px] font-black text-rose-600 mb-1">Danger Zone</h2>

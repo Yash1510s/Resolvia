@@ -64,13 +64,26 @@ const SIDE_QUOTES: Record<string, string> = {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { activeRole, setActiveRole, unreadCount, invitations, profilePrefs, rslvBalance, claimFaucet, logout: demoLogout } = useApp();
+  const { activeRole, setActiveRole, unreadCount, invitations, profilePrefs, rslvBalance, claimFaucet, isLoggedIn, logout: demoLogout } = useApp();
   const { user: authUser, logout: authLogout } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [q, setQ] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const pendingInvites = invitations.filter((i) => i.status === 'PENDING').length;
+
+  // Global Ctrl/Cmd+K focuses the search box (the hint in the input is real).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -97,8 +110,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return 0;
   };
 
-  const displayName = authUser ? authUser.name : 'Guest User';
-  const displayRole = authUser ? (profilePrefs.roleType === 'PROFESSIONAL' ? 'Professional' : profilePrefs.roleType === 'INSTITUTION' ? 'Institution' : 'Student') : 'Not signed in';
+  const demoRoleLabel = activeRole === 'CLAIMANT' ? 'Claimant' : activeRole === 'RESPONDENT' ? 'Respondent' : 'Juror';
+  const displayName = authUser ? authUser.name : isLoggedIn ? `Demo ${demoRoleLabel}` : 'Guest User';
+  const displayRole = authUser
+    ? profilePrefs.roleType === 'PROFESSIONAL'
+      ? 'Professional'
+      : profilePrefs.roleType === 'INSTITUTION'
+      ? 'Institution'
+      : 'Member'
+    : isLoggedIn
+    ? 'Demo persona'
+    : 'Not signed in';
   const walletShort = authUser ? `${authUser.wallet.slice(0, 6)}…${authUser.wallet.slice(-4)}` : null;
 
   const navItems = (
@@ -164,6 +186,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex-1 max-w-xl flex items-center gap-2.5 bg-slate-100 hover:bg-slate-200/70 rounded-xl px-3.5 py-2.5 cursor-text transition-colors">
           <Search className="w-4 h-4 text-slate-400" />
           <input
+            ref={searchRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={doSearch}
@@ -203,11 +226,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
               <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
             </div>
-          ) : (
+          ) : !isLoggedIn ? (
             <button onClick={() => router.push('/login')} className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold transition-colors">
               <Wallet className="w-4 h-4" />
               Sign in
             </button>
+          ) : (
+            <span className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-50 border border-violet-200 text-violet-700 text-[11px] font-bold">
+              Demo session · {demoRoleLabel}
+            </span>
           )}
 
           {/* User chip */}
@@ -276,7 +303,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Desktop sidebar */}
         <aside className="hidden lg:flex flex-col w-60 shrink-0 bg-[#0d1526] text-slate-300 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto">
           <div className="px-5 pt-5 pb-4">
-            <Link href="/home" className="flex items-center gap-2.5">
+            <Link href="/dashboard" className="flex items-center gap-2.5" title="Back to dashboard">
               <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-900/40">
                 <Scale className="w-5 h-5 text-white" />
               </div>
@@ -337,8 +364,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Link href="/case-studies" className="hover:text-violet-600">Case Studies</Link>
               <Link href="/resources" className="hover:text-violet-600">Resources</Link>
               <Link href="/how-it-works" className="hover:text-violet-600">How it works</Link>
-              <span className="cursor-default">Privacy</span>
-              <span className="cursor-default">Terms</span>
+              <Link href="/privacy" className="hover:text-violet-600">Privacy</Link>
+              <Link href="/terms" className="hover:text-violet-600">Terms</Link>
             </div>
             <p className="text-[11px] text-slate-400">© 2026 Resolvia. Justice Reimagined. <span className="hidden md:inline">(Testnet prototype)</span></p>
           </footer>

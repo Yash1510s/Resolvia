@@ -1,5 +1,13 @@
 import { DisputeCase } from '../types';
 
+// ── Demo time engine ─────────────────────────────────────────────────────────
+// The demo world must always be "alive": active-case deadlines are computed
+// relative to load time so they can never be expired, no matter when the
+// prototype is opened. Closed cases keep fixed historical dates.
+const DAY = 86_400_000;
+export const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString();
+const inDays = (n: number) => new Date(Date.now() + n * DAY).toISOString();
+
 export const INITIAL_CASES: DisputeCase[] = [
   {
     id: 'case-084',
@@ -9,9 +17,9 @@ export const INITIAL_CASES: DisputeCase[] = [
     status: 'JURY_COMMIT',
     myRole: 'JUROR',
     disputeAmount: '4,500 USDC / 15,000 RSLV',
-    createdAt: '2026-08-28T10:14:00Z',
-    responseDeadline: '2026-08-30T10:14:00Z',
-    votingDeadline: '2026-09-07T18:00:00Z',
+    createdAt: daysAgo(20),
+    responseDeadline: daysAgo(18),
+    votingDeadline: inDays(1),
     claimant: {
       name: 'Apex Web3 Studio (Alice Vance)',
       wallet: '0x8842...3f91',
@@ -80,7 +88,7 @@ export const INITIAL_CASES: DisputeCase[] = [
       reportId: 'AIR-084-V1',
       caseId: 'case-084',
       generatedAt: '2026-08-30T12:00:00Z',
-      modelIdentifier: 'Resolvia-LegalNLP-v2.4 (Transformer & Hybrid Verifier)',
+      modelIdentifier: 'Resolvia Advisory Engine v1 (deterministic rules — LLM advisory pending)',
       promptInjectionDefense: {
         status: 'SECURE_CLEARED',
         threatsDetected: 0,
@@ -138,13 +146,11 @@ export const INITIAL_CASES: DisputeCase[] = [
     jurors: [
       {
         jurorId: 'juror-01',
-        name: 'Juror Carol (Smart Contract Auditor)',
+        name: 'You (anonymous)',
         walletAddress: '0x32a1...9b28',
         reputationScore: 98,
         stakedAmount: 2500,
-        status: 'COMMITTED',
-        commitmentHash: '0xa482e917d048b01938c8210349b1837c4091a829103c81093c819301938a1920',
-        commitTimestamp: '2026-08-31T09:12:00Z',
+        status: 'PENDING_COMMIT',
       },
       {
         jurorId: 'juror-02',
@@ -263,9 +269,9 @@ export const INITIAL_CASES: DisputeCase[] = [
     status: 'AI_ANALYSIS',
     myRole: 'CLAIMANT',
     disputeAmount: '8,200 USDC',
-    createdAt: '2026-09-02T16:20:00Z',
-    responseDeadline: '2026-09-04T16:20:00Z',
-    votingDeadline: '2026-09-10T12:00:00Z',
+    createdAt: daysAgo(5),
+    responseDeadline: inDays(2),
+    votingDeadline: inDays(9),
     claimant: {
       name: 'Julian Sterling (Buyer)',
       wallet: '0x9941...4b21',
@@ -338,7 +344,7 @@ export const INITIAL_CASES: DisputeCase[] = [
     status: 'APPEAL_WINDOW',
     myRole: 'RESPONDENT',
     appeal: {
-      windowClosesAt: '2026-09-09T18:05:00Z',
+      windowClosesAt: inDays(2),
       filed: false,
     },
     disputeAmount: '12,000 DAI',
@@ -763,9 +769,9 @@ export const INITIAL_CASES: DisputeCase[] = [
     category: 'BUSINESS_PEER',
     status: 'EVIDENCE_LOCKED',
     disputeAmount: '6,400 USDC',
-    createdAt: '2026-09-03T12:00:00Z',
-    responseDeadline: '2026-09-05T12:00:00Z',
-    votingDeadline: '2026-09-12T18:00:00Z',
+    createdAt: daysAgo(4),
+    responseDeadline: inDays(1),
+    votingDeadline: inDays(7),
     claimant: {
       name: 'Harbor Logistics Pvt Ltd',
       wallet: '0x8a12...77f0',
@@ -818,7 +824,7 @@ export const INITIAL_CASES: DisputeCase[] = [
       reportId: 'AIR-102-V1',
       caseId: 'case-102',
       generatedAt: '2026-09-05T10:00:00Z',
-      modelIdentifier: 'Resolvia-LegalNLP-v2.4 (Transformer & Hybrid Verifier)',
+      modelIdentifier: 'Resolvia Advisory Engine v1 (deterministic rules — LLM advisory pending)',
       promptInjectionDefense: {
         status: 'SECURE_CLEARED',
         threatsDetected: 0,
@@ -852,10 +858,6 @@ export const INITIAL_CASES: DisputeCase[] = [
       { eventId: 'evt-102-1', eventNumber: 'EVENT 001', title: 'Case Created & Escrow Locked', actor: '0x8a12...77f0', actorRole: 'Claimant', timestamp: '2026-09-03 12:00:00 UTC', txHash: '0x9910...4410', blockNumber: 6301002, metadataHash: '0x9910...5520', details: 'Freight chargeback dispute opened; 640 RSLV stake locked.' },
       { eventId: 'evt-102-2', eventNumber: 'EVENT 005', title: 'Evidence Window Locked', actor: 'System Protocol', actorRole: 'Protocol Engine', timestamp: '2026-09-05 12:00:00 UTC', txHash: '0x8820...6630', blockNumber: 6302450, metadataHash: '0x8820...7740', details: '2 evidence items locked; Merkle root anchored.' },
       { eventId: 'evt-102-3', eventNumber: 'EVENT 006', title: 'AI Advisory Report Published', actor: 'Resolvia-AI Engine', actorRole: 'AI Advisory Node', timestamp: '2026-09-05 10:00:00 UTC', txHash: '0x7710...8850', blockNumber: 6302511, metadataHash: '0x7710...9960', details: 'Advisory: 58% Split lean; 0 injection threats.' },
-    ],
-    deliberation: [
-      { id: 'del-102-1', author: '#K2M8', authorRole: 'Juror (anonymous)', authorBadge: 'Juror #K2M8', body: 'The bill of lading is signed, but the booking email predates it by 3 days. Which document governs?', createdAt: '2026-09-06T10:00:00Z', likes: 2, reports: 0 },
-      { id: 'del-102-2', author: '#P4XQ', authorRole: 'Juror (anonymous)', authorBadge: 'Juror #P4XQ', body: 'Unless the surcharge clause was presented before booking, I lean toward the consignee here.', createdAt: '2026-09-06T11:20:00Z', likes: 3, reports: 0 },
     ],
   },
   {
@@ -1053,9 +1055,9 @@ export const INITIAL_CASES: DisputeCase[] = [
     status: 'EVIDENCE_LOCKED',
     myRole: 'RESPONDENT',
     disputeAmount: '2,400 USD',
-    createdAt: '2026-09-04T10:00:00Z',
-    responseDeadline: '2026-09-16T10:00:00Z',
-    votingDeadline: '2026-09-25T18:00:00Z',
+    createdAt: daysAgo(3),
+    responseDeadline: inDays(5),
+    votingDeadline: inDays(14),
     claimant: { name: 'Rian Mehta (Claimant)', wallet: '0x44b8...bb14', stake: 240 },
     respondent: { name: 'You (Respondent)', wallet: '0x55c9...cc25', stake: 240, responded: true },
     claimSummary:
@@ -1069,7 +1071,7 @@ export const INITIAL_CASES: DisputeCase[] = [
     jurors: [],
     auditTrail: [
       { eventId: 'evt-0987-1', eventNumber: 'EVENT 001', title: 'Case Created & Escrow Locked', actor: '0x44b8...bb14', actorRole: 'Claimant', timestamp: '2026-09-04 10:00:00 UTC', txHash: '0x33b2...22ac', blockNumber: 6305000, metadataHash: '0x33b2...33b2', details: 'Project contribution dispute opened; 240 RSLV stake locked.' },
-      { eventId: 'evt-0987-2', eventNumber: 'EVENT 003', title: 'Respondent Responded & Counter-Staked', actor: '0x55c9...cc25', actorRole: 'Respondent', timestamp: '2026-09-05 09:30:00 UTC', txHash: '0x44c3...33b2', blockNumber: 6305440, metadataHash: '0x44c3...44c3', details: 'Response recorded; evidence window locked (closes 16 Sep 2026).' },
+      { eventId: 'evt-0987-2', eventNumber: 'EVENT 003', title: 'Respondent Responded & Counter-Staked', actor: '0x55c9...cc25', actorRole: 'Respondent', timestamp: daysAgo(2).replace('T', ' ').substring(0, 19) + ' UTC', txHash: '0x44c3...33b2', blockNumber: 6305440, metadataHash: '0x44c3...44c3', details: 'Response recorded; evidence window locked (closes in 5 days).' },
     ],
   },
 ];
@@ -1082,8 +1084,8 @@ export const INITIAL_INVITATIONS: import('../types').JuryInvitation[] = [
     category: 'BUSINESS_PEER',
     estimatedEffortMin: 120,
     stakeRequired: 2500,
-    inviteSentAt: '2026-09-06T09:00:00Z',
-    expiresAt: '2026-09-08T09:00:00Z',
+    inviteSentAt: daysAgo(1),
+    expiresAt: inDays(1),
     status: 'PENDING',
   },
 ];
@@ -1091,6 +1093,6 @@ export const INITIAL_INVITATIONS: import('../types').JuryInvitation[] = [
 export const INITIAL_JUROR_HISTORY: import('../types').JurorHistoryItem[] = [
   { caseId: 'case-059', caseNumber: 'RSLV-2026-059', category: 'SERVICE_SLA', completedAt: '2026-07-28T14:00:00Z', voteChoice: 'CLAIMANT_UPHELD', alignedWithOutcome: true, reputationDelta: 12, onTime: true },
   { caseId: 'case-031', caseNumber: 'RSLV-2026-031', category: 'ECOMMERCE_MARKETPLACE', completedAt: '2026-06-14T10:00:00Z', voteChoice: 'CLAIMANT_UPHELD', alignedWithOutcome: true, reputationDelta: 10, onTime: true },
-  { caseId: 'case-220', caseNumber: 'RSLV-2026-220', category: 'CONTRACT_OBLIGATION', completedAt: '2026-05-20T16:00:00Z', voteChoice: 'RESPONDENT_UPHELD', alignedWithOutcome: false, reputationDelta: 2, onTime: true },
-  { caseId: 'case-188', caseNumber: 'RSLV-2026-188', category: 'DIGITAL_PLATFORM', completedAt: '2026-04-11T11:00:00Z', voteChoice: 'SPLIT_SETTLEMENT', alignedWithOutcome: false, reputationDelta: 4, onTime: false },
+  { caseId: 'case-0765', caseNumber: 'RSLV-2026-0765', category: 'CAMPUS_LIFE', completedAt: '2026-05-20T16:00:00Z', voteChoice: 'RESPONDENT_UPHELD', alignedWithOutcome: false, reputationDelta: 2, onTime: true },
+  { caseId: 'case-0689', caseNumber: 'RSLV-2026-0689', category: 'FINANCIAL_PAYMENT', completedAt: '2026-04-11T11:00:00Z', voteChoice: 'SPLIT_SETTLEMENT', alignedWithOutcome: false, reputationDelta: 4, onTime: false },
 ];

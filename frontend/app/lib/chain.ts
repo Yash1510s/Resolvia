@@ -198,3 +198,84 @@ export function shortHash(h: string, chars = 10): string {
   if (!h || h.length <= chars * 2) return h;
   return `${h.slice(0, chars)}…${h.slice(-chars)}`;
 }
+
+// ── EvidenceRegistry: real on-chain anchoring ────────────────────────────────
+export const EVIDENCE_ABI = [
+  "function registerEvidence(uint256 caseId, bytes32 contentSha256, string ipfsCid, uint8 tier) returns (uint256)",
+  "function evidenceCount() view returns (uint256)",
+  "function getCaseEvidence(uint256 caseId) view returns (uint256[])",
+  "event EvidenceRegistered(uint256 indexed evidenceId, uint256 indexed caseId, address indexed submitter, bytes32 contentSha256, string ipfsCid, uint8 tier)",
+];
+
+export interface AnchorResult {
+  status: 'ANCHORED' | 'PENDING' | 'FAILED';
+  txHash?: string;
+  blockNumber?: number | null;
+  error?: string;
+}
+
+/**
+ * Anchor an evidence hash on-chain.
+ * - Logged-in user: the backend signs with the user's assigned (custodial)
+ *   wallet — a real transaction, no MetaMask.
+ * - Guest/demo: signed with the demo claimant account (local testnet only).
+ */
+export async function anchorEvidenceOnChain(
+  args: { caseId: number; sha256: string; ipfsCid: string; tier?: number },
+  authToken?: string | null
+): Promise<AnchorResult> {
+  if (authToken) {
+    try {
+      const res = await fetch('/api/backend/wallet/evidence/anchor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ caseId: args.caseId, sha256: args.sha256, ipfsCid: args.ipfsCid, tier: args.tier ?? 0 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { status: 'FAILED', error: data.detail || `Anchor failed (${res.status})` };
+      return { status: data.status === 'ANCHORED' ? 'ANCHORED' : 'PENDING', txHash: data.txHash, blockNumber: data.blockNumber };
+    } catch (e: any) {
+      return { status: 'FAILED', error: e?.message || 'Backend unreachable' };
+    }
+  }
+  // Guest path: demo claimant signs via /api/rpc (local testnet, well-known key).
+  try {
+    const dep = await fetchDeployment();
+    if (!dep) return { status: 'FAILED', error: 'No local deployment manifest — run blockchain deploy' };
+    const ev = new Contract(dep.contracts.EvidenceRegistry, EVIDENCE_ABI, getWallet(ACCOUNTS.claimant));
+    const tx = await ev.registerEvidence(args.caseId, '0x' + args.sha256, args.ipfsCid, args.tier ?? 0, { gasLimit: 300000 });
+    const rc = await tx.wait();
+    return { status: 'ANCHORED', txHash: tx.hash, blockNumber: rc?.blockNumber };
+  } catch (e: any) {
+    return { status: 'FAILED', error: e?.message || 'On-chain anchor failed' };
+  }
+}
+
+/** Public on-chain check: is this hash in the EvidenceRegistry? */
+export async function verifyEvidenceOnChain(
+  sha256: string
+): Promise<{ status: 'ANCHORED' | 'NOT_FOUND' | 'ERROR'; matches?: { txHash?: string; blockNumber?: number }[]; error?: string }> {
+  try {
+    const res = await fetch(`/api/backend/evidence/verify?sha256=${encodeURIComponent(sha256)}`, { cache: 'no-store' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return { status: 'ERROR', error: data.detail || 'Chain read failed' };
+    return { status: data.status, matches: data.matches };
+  } catch (e: any) {
+    return { status: 'ERROR', error: e?.message || 'Backend unreachable' };
+  }
+}
+
+// ── Session content cache (for real content re-hash + tamper demo) ───────────
+const _contentCache = new Map<string, Uint8Array>();
+
+export function storeEvidenceContent(sha256: string, bytes: ArrayBuffer) {
+  try {
+    _contentCache.set(sha256.toLowerCase(), new Uint8Array(bytes));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function getEvidenceContent(sha256: string): Uint8Array | null {
+  return _contentCache.get(sha256.toLowerCase()) || null;
+}

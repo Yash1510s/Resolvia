@@ -26,12 +26,14 @@ import { Card, Chip, categoryLabel, fmtDate, shortCaseId } from '../../../compon
 import type { EvidenceItem } from '../../../types';
 
 function useCountdown(iso?: string) {
-  const [now, setNow] = useState(() => Date.now());
+  // Hydration-safe: start null (SSR), tick only after mount — server/client clocks differ.
+  const [now, setNow] = useState<number | null>(null);
   React.useEffect(() => {
+    setNow(Date.now());
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
-  if (!iso) return null;
+  if (!iso || now === null) return null;
   const diff = new Date(iso).getTime() - now;
   if (diff <= 0) return { text: 'Deadline passed', urgent: false };
   const d = Math.floor(diff / 86_400_000);
@@ -98,7 +100,10 @@ export default function JurorWorkspace({ params }: { params: Promise<{ caseId: s
   const isMyCase = dispute.myRole === 'JUROR';
   const myJuror = isMyCase ? dispute.jurors.find((j) => j.walletAddress === identity.wallet) || dispute.jurors[0] : undefined;
   const voted = myJuror?.status === 'REVEALED';
-  const step = !myJuror || myJuror.status === 'PENDING_COMMIT' ? 1 : myJuror.status === 'COMMITTED' ? 3 : 3;
+  // Step 2 ("Analyze & Deliberate") activates once the juror has actually reviewed
+  // (read the full claim or posted in deliberation) — before that it is step 1.
+  const [analyzed, setAnalyzed] = useState(false);
+  const step = voted || myJuror?.status === 'COMMITTED' ? 3 : analyzed ? 2 : 1;
   const cat = categoryLabel(dispute.category);
   const evAll = dispute.evidence;
   const evFiltered = evFilter === 'ALL' ? evAll : evAll.filter((e) => e.submittedBy === evFilter);
@@ -109,6 +114,7 @@ export default function JurorWorkspace({ params }: { params: Promise<{ caseId: s
     if (!delText.trim()) return;
     addDeliberationPost(dispute.id, delText.trim());
     setDelText('');
+    setAnalyzed(true);
   };
 
   return (
@@ -151,7 +157,13 @@ export default function JurorWorkspace({ params }: { params: Promise<{ caseId: s
               <p className="text-[10.5px] text-slate-400 mt-1">Submitted on {fmtDate(dispute.createdAt)}</p>
               <h2 className="text-[17px] font-black text-slate-900 mt-2.5 leading-snug">{dispute.title}</h2>
               <p className={`text-[12px] text-slate-500 mt-2 leading-relaxed ${expanded ? '' : 'line-clamp-3'}`}>{dispute.claimSummary}</p>
-              <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700 mt-1.5">
+              <button
+                onClick={() => {
+                  setExpanded(!expanded);
+                  if (!expanded) setAnalyzed(true);
+                }}
+                className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700 mt-1.5"
+              >
                 {expanded ? 'Show less' : 'Read More'} <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
               </button>
 

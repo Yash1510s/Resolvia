@@ -200,8 +200,8 @@ function MyCases() {
                   <div className="flex items-center gap-2.5 w-44 shrink-0">
                     {dl.icon}
                     <div className="leading-tight">
-                      <p className="text-[11px] font-semibold text-slate-500">{dl.top}</p>
-                      <p className={`text-[11px] font-bold ${(dl as { urgent?: boolean }).urgent ? 'text-rose-600' : 'text-slate-700'}`}>{dl.sub}</p>
+                      <p suppressHydrationWarning className="text-[11px] font-semibold text-slate-500">{dl.top}</p>
+                      <p suppressHydrationWarning className={`text-[11px] font-bold ${(dl as { urgent?: boolean }).urgent ? 'text-rose-600' : 'text-slate-700'}`}>{dl.sub}</p>
                     </div>
                   </div>
                   <Link

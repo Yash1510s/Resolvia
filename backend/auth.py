@@ -436,3 +436,152 @@ def _get_key(user: dict) -> bytes:
 def vote_reveal(body: RevealIn, user: dict = Depends(get_current_user)):
     data = _SELECTOR_REVEAL + _pad32(body.caseId) + _pad32(body.vote) + bytes.fromhex(body.salt[2:])
     return _signed_vote(user, data)
+
+
+# ── Evidence anchoring (real on-chain write via the user's wallet) ───────────
+
+class AnchorIn(BaseModel):
+    caseId: int = Field(ge=0)
+    sha256: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
+    ipfsCid: str = Field(min_length=1, max_length=128)
+    tier: int = Field(ge=0, le=3, default=0)  # AccessTier enum
+
+
+def _abi_encode_string(s: str) -> bytes:
+    raw = s.encode("utf-8")
+    length = len(raw)
+    padded = raw + b"\x00" * ((32 - length % 32) % 32)
+    return _pad32(length) + padded
+
+
+def _load_evidence_registry() -> str:
+    try:
+        with open(MANIFEST_PATH) as f:
+            m = json.load(f)
+        return m["contracts"]["EvidenceRegistry"]
+    except Exception:
+        raise HTTPException(status_code=503, detail="Deployment manifest not found — run blockchain deploy")
+
+
+def _signed_tx(user: dict, to_address: str, data: bytes, gas: int = 150_000) -> dict:
+    with _db() as conn:
+        w = conn.execute("SELECT encrypted_key FROM wallets WHERE user_id=?", (user["id"],)).fetchone()
+    if not w:
+        raise HTTPException(status_code=500, detail="Wallet not provisioned")
+    private_key = _decrypt_key(w["encrypted_key"])
+    nonce = int(_rpc("eth_getTransactionCount", [format_address(private_key), "pending"]) or "0x0", 16)
+    gas_price = int(_rpc("eth_gasPrice", []) or "0x0", 16)
+    tx = {
+        "to": to_address,
+        "value": 0,
+        "gas": gas,
+        "gasPrice": gas_price,
+        "nonce": nonce,
+        "chainId": CHAIN_ID,
+        "data": data,
+    }
+    signed = Account.sign_transaction(tx, private_key)
+    tx_hash = _rpc("eth_sendRawTransaction", [signed.raw_transaction.hex()])
+    if not tx_hash:
+        raise HTTPException(status_code=502, detail="Transaction was not accepted")
+    for _ in range(30):
+        receipt = _rpc("eth_getTransactionReceipt", [tx_hash])
+        if receipt:
+            if int(receipt["status"], 16) == 0:
+                raise HTTPException(status_code=422, detail="On-chain transaction reverted")
+            return {"status": "ANCHORED", "txHash": tx_hash, "blockNumber": int(receipt["blockNumber"], 16)}
+    return {"status": "PENDING", "txHash": tx_hash, "blockNumber": None}
+
+
+_SELECTOR_REGISTER_EVIDENCE = keccak(text="registerEvidence(uint256,bytes32,string,uint8)")[:4]
+
+
+@router.post("/wallet/evidence/anchor")
+def evidence_anchor(body: AnchorIn, user: dict = Depends(get_current_user)):
+    """Register an evidence hash on-chain, signed by the user's assigned wallet."""
+    data = (
+        _SELECTOR_REGISTER_EVIDENCE
+        + _pad32(body.caseId)
+        + bytes.fromhex(body.sha256)  # exactly 32 bytes
+        + _pad32(96)  # head: 3 fixed slots before the dynamic string
+        + _pad32(body.tier)
+        + _abi_encode_string(body.ipfsCid)
+    )
+    out = _signed_tx(user, _load_evidence_registry(), data, gas=300_000)
+    out["caseId"] = body.caseId
+    out["sha256"] = body.sha256.lower()
+    out["submitter"] = user["wallet"]
+    return out
+
+
+@router.get("/evidence/verify")
+def evidence_verify(sha256: str, caseId: Optional[int] = None):
+    """Public read-only check: is this hash anchored in the EvidenceRegistry?"""
+    import re as _re
+
+    h = sha256.strip().lower()
+    if _re.fullmatch(r"0x[0-9a-f]{64}", h):
+        h = h[2:]
+    if not _re.fullmatch(r"[0-9a-f]{64}", h):
+        raise HTTPException(status_code=400, detail="sha256 must be 64 hex chars")
+    target = "0x" + h
+    try:
+        # Scan from the start of the chain (local/testnet chains are small; on
+        # mainnet this would use an indexer). contentSha256 is a non-indexed
+        # event param, so we scan the log data.
+        latest = int(_rpc("eth_blockNumber", []) or "0x0", 16)
+        logs = _rpc(
+            "eth_getLogs",
+            [
+                {
+                    "fromBlock": "0x0",
+                    "toBlock": hex(latest),
+                    "address": _load_evidence_registry(),
+                }
+            ],
+        ) or []
+        found = []
+        for lg in logs:
+            data_hex = lg.get("data", "0x")
+            # contentSha256 appears in the data (4th param, non-indexed) as bytes32.
+            if h in data_hex.lower():
+                found.append(
+                    {
+                        "txHash": lg.get("transactionHash"),
+                        "blockNumber": int(lg.get("blockNumber", "0x0"), 16),
+                        "logIndex": int(lg.get("logIndex", "0x0"), 16),
+                    }
+                )
+        if found:
+            return {"status": "ANCHORED", "sha256": h, "matches": found, "count": len(found)}
+        return {"status": "NOT_FOUND", "sha256": h, "matches": []}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Chain read failed: {e}")
+
+# ── App-state sync (per-user persistence) ─────────────────────────────────────
+import state_store
+
+
+class StateIn(BaseModel):
+    state: dict
+
+
+@router.get("/state")
+def get_saved_state(user: dict = Depends(get_current_user)):
+    """Return the workspace state saved for this account (404 if none yet)."""
+    data = state_store.load_state(str(user["id"]))
+    if data is None:
+        raise HTTPException(status_code=404, detail="No saved state for this account")
+    return {"state": data}
+
+
+@router.put("/state")
+def put_saved_state(body: StateIn, user: dict = Depends(get_current_user)):
+    """Mirror the frontend workspace state to the backend (opaque JSON)."""
+    try:
+        state_store.save_state(str(user["id"]), body.state)
+    except ValueError as e:
+        raise HTTPException(status_code=413, detail=str(e))
+    return {"ok": True}

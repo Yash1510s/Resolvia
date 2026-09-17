@@ -434,7 +434,7 @@ export function OnChainProtocol({ dispute }: OnChainProtocolProps) {
             <button
               onClick={handleLaunch}
               disabled={busy !== null}
-              className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black transition-all cursor-pointer shadow-md disabled:opacity-50 flex items-center gap-2"
+              className="px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black transition-all cursor-pointer shadow-md disabled:opacity-50 flex items-center gap-2"
             >
               <Rocket className="w-4 h-4" />
               <span>Deploy Case On-Chain</span>
@@ -738,7 +738,7 @@ export function OnChainProtocol({ dispute }: OnChainProtocolProps) {
                   <button
                     onClick={handleMyCommit}
                     disabled={busy !== null}
-                    className="w-full p-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black transition-all cursor-pointer shadow-md disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="w-full p-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black transition-all cursor-pointer shadow-md disabled:opacity-50 flex items-center justify-center gap-2"
                   >
                     {busy === 'commit' ? (
                       <>

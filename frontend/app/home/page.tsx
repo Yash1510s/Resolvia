@@ -11,7 +11,7 @@ import { UserRole } from '../types';
 
 function PublicLanding() {
   const router = useRouter();
-  const { user: authUser } = useAuth();
+  const { user: authUser, logout: authLogout } = useAuth();
   const [authOpen, setAuthOpen] = useState(false);
 
   // ?signin=1 → open the sign-in modal (used by the app-shell "Sign in" link)
@@ -86,7 +86,7 @@ function PublicLanding() {
           {authUser ? (
             <button
               onClick={() => router.push('/dashboard')}
-              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center gap-1.5"
+                className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all flex items-center gap-1.5"
             >
               Dashboard
               <ArrowRight className="w-3.5 h-3.5" />
@@ -110,7 +110,10 @@ function PublicLanding() {
           onSignInRole={enterAs}
           onWatchDemo={watchDemo}
           isLoggedIn={!!authUser}
-          onLogout={() => router.push('/home')}
+          onLogout={() => {
+            authLogout();
+            router.push('/home');
+          }}
         />
       </div>
 

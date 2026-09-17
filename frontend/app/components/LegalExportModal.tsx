@@ -137,7 +137,7 @@ export function LegalExportModal({ isOpen, onClose, dispute }: LegalExportModalP
           {!generated ? (
             <button
               onClick={handleGenerate}
-              className="w-full p-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black transition-all cursor-pointer shadow-md"
+              className="w-full p-4 rounded-2xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black transition-all cursor-pointer shadow-md"
             >
               Generate Dossier Package
             </button>

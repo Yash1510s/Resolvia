@@ -20,7 +20,7 @@ export function StatusStepper({ status, compact = false }: { status: CaseStatus;
                 done
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
                   : active
-                  ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                  ? 'bg-violet-600 border-violet-600 text-white shadow-sm'
                   : 'bg-white border-slate-200 text-slate-400'
               }`}
             >

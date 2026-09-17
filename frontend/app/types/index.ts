@@ -53,6 +53,11 @@ export interface EvidenceItem {
   accessTier: AccessTier;
   encrypted: boolean;
   tamperDetected?: boolean;
+  // Real on-chain anchoring (EvidenceRegistry.registerEvidence)
+  onChainAnchored?: boolean;
+  onChainTx?: string;
+  onChainBlock?: number;
+  onChainEvidenceId?: number;
 }
 
 export interface ClaimMapping {

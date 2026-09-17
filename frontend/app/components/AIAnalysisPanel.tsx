@@ -38,7 +38,7 @@ export function AIAnalysisPanel({ report, onRunAnalysis, isAnalyzing }: AIAnalys
         <button
           onClick={onRunAnalysis}
           disabled={isAnalyzing}
-          className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all cursor-pointer shadow-md disabled:opacity-50 inline-flex items-center gap-2"
+          className="px-6 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all cursor-pointer shadow-md disabled:opacity-50 inline-flex items-center gap-2"
         >
           {isAnalyzing ? (
             <>

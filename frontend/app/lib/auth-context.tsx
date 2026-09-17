@@ -40,7 +40,11 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     cache: 'no-store',
   });
   const data: T & { detail?: string } = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data && data.detail) || `Request failed (${res.status})`);
+  if (!res.ok) {
+    const err = new Error((data && data.detail) || `Request failed (${res.status})`);
+    (err as any).status = res.status;
+    throw err;
+  }
   return data;
 }
 
@@ -61,7 +65,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     api<{ user: AuthUser }>('auth/me', { headers: { Authorization: `Bearer ${token}` } })
       .then((d) => setUser(d.user))
-      .catch(() => localStorage.removeItem(TOKEN_KEY))
+      .catch((e) => {
+        // Only a definite auth rejection kills the session. Transient network
+        // errors (backend restart, blip) must NOT silently log the user out.
+        if (e instanceof Error && (e as any).status === 401 || (e as any).status === 403) {
+          localStorage.removeItem(TOKEN_KEY);
+        }
+      })
       .finally(() => setLoading(false));
   }, []);
 

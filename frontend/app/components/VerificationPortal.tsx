@@ -13,7 +13,8 @@ import {
   Layers,
 } from 'lucide-react';
 import { DisputeCase } from '../types';
-import { formatHash } from '../lib/crypto';
+import { formatHash, computeSha256Bytes } from '../lib/crypto';
+import { verifyEvidenceOnChain, getEvidenceContent } from '../lib/chain';
 
 interface VerificationPortalProps {
   cases: DisputeCase[];
@@ -29,44 +30,93 @@ export function VerificationPortal({ cases }: VerificationPortalProps) {
     caseNumber?: string;
     blockNumber?: number;
     details?: string;
+    onChain?: 'ANCHORED' | 'NOT_FOUND' | 'UNKNOWN';
+    onChainTx?: string;
+    contentCheck?: 'MATCH' | 'MISMATCH' | 'UNAVAILABLE';
   } | null>(null);
+  const [tamperDemo, setTamperDemo] = useState<{ original: string; tampered: string } | null>(null);
 
   const handleVerify = async () => {
-    const q = input.trim();
+    const q = input.trim().toLowerCase().replace(/^0x/, '');
     if (!q) {
       setResult({ status: 'EMPTY' });
       return;
     }
     setVerifying(true);
-    await new Promise((r) => setTimeout(r, 700));
+    setTamperDemo(null);
 
-    // 1) Try matching a full or partial SHA-256 hash against evidence
-    for (const c of cases) {
-      for (const e of c.evidence) {
-        if (e.sha256Hash.includes(q) || q.includes(e.sha256Hash.slice(0, 16))) {
-          setResult({
-            status: 'VALID',
-            hash: e.sha256Hash,
-            evidenceName: e.fileName,
-            caseNumber: c.caseNumber,
-            details: `Hash matches the anchored fingerprint of "${e.fileName}" in case ${c.caseNumber}. IPFS CID: ${e.ipfsCid}.`,
-          });
-          setVerifying(false);
-          return;
+    const looksLikeHash = /^[0-9a-f]{16,}$/.test(q);
+
+    // 1) Hash input: real on-chain check + real content re-hash.
+    if (looksLikeHash) {
+      const chain = await verifyEvidenceOnChain(q);
+      let ctx: { name: string; caseNumber: string; full: string } | null = null;
+      for (const c of cases) {
+        for (const e of c.evidence) {
+          if (e.sha256Hash.includes(q) || q.includes(e.sha256Hash.slice(0, 16))) {
+            ctx = { name: e.fileName, caseNumber: c.caseNumber, full: e.sha256Hash };
+          }
         }
       }
+      const full = ctx?.full || (q.length >= 64 ? q.slice(0, 64) : undefined);
+      let contentCheck: 'MATCH' | 'MISMATCH' | 'UNAVAILABLE' = 'UNAVAILABLE';
+      if (full && full.length === 64) {
+        const bytes = getEvidenceContent(full);
+        if (bytes) {
+          const recomputed = await computeSha256Bytes(bytes.buffer.slice(0) as ArrayBuffer);
+          contentCheck = recomputed.toLowerCase() === full.toLowerCase() ? 'MATCH' : 'MISMATCH';
+        }
+      }
+      const anchored = chain.status === 'ANCHORED';
+      const mismatch = contentCheck === 'MISMATCH';
+      const parts: string[] = [];
+      parts.push(
+        anchored
+          ? `On-chain: ANCHORED in EvidenceRegistry — tx ${chain.matches?.[0]?.txHash || '—'}, block #${chain.matches?.[0]?.blockNumber ?? '—'}.`
+          : 'On-chain: no EvidenceRegistry record for this hash (demo-dataset items were never anchored on-chain; cases filed via the wizard are).'
+      );
+      if (contentCheck === 'MATCH') parts.push('Content: re-computed SHA-256 of the original bytes matches the fingerprint.');
+      if (contentCheck === 'MISMATCH') parts.push('Content: re-computed SHA-256 does NOT match — the bytes were altered after filing.');
+      if (contentCheck === 'UNAVAILABLE') parts.push('Content: original bytes not present in this browser (uploaded elsewhere, or demo dataset) — the on-chain record is the authoritative check.');
+      if (ctx) parts.push(`Record: "${ctx.name}" in case ${ctx.caseNumber}.`);
+      setResult({
+        status: mismatch ? 'MISMATCH' : anchored || ctx ? 'VALID' : 'NOT_FOUND',
+        hash: full,
+        evidenceName: ctx?.name,
+        caseNumber: ctx?.caseNumber,
+        blockNumber: chain.matches?.[0]?.blockNumber,
+        details: parts.join(' '),
+        onChain: chain.status === 'ANCHORED' ? 'ANCHORED' : chain.status === 'NOT_FOUND' ? 'NOT_FOUND' : 'UNKNOWN',
+        onChainTx: chain.matches?.[0]?.txHash,
+        contentCheck,
+      });
+      setVerifying(false);
+      return;
     }
 
-    // 2) Try matching a case number
-    const caseMatch = cases.find((c) => c.caseNumber.toLowerCase().includes(q.toLowerCase()));
+    // 2) Case number input: summarize + real on-chain check for its first evidence.
+    const caseMatch = cases.find((c) => c.caseNumber.toLowerCase().includes(q));
     if (caseMatch) {
-      const ev = caseMatch.evidence[0];
+      const first = caseMatch.evidence[0];
+      let chain: { status: 'ANCHORED' | 'NOT_FOUND' | 'ERROR' | 'UNKNOWN'; matches?: { txHash?: string; blockNumber?: number }[] } = {
+        status: 'UNKNOWN',
+        matches: [],
+      };
+      if (first) chain = await verifyEvidenceOnChain(first.sha256Hash);
+      const anchoredCount = caseMatch.evidence.filter((e) => e.onChainAnchored).length;
       setResult({
         status: 'VALID',
-        hash: ev?.sha256Hash,
-        evidenceName: ev?.fileName,
+        hash: first?.sha256Hash,
+        evidenceName: first?.fileName,
         caseNumber: caseMatch.caseNumber,
-        details: `Case ${caseMatch.caseNumber} found on-chain. ${caseMatch.evidence.length} evidence item(s) anchored. ${caseMatch.auditTrail.length} audit events recorded.`,
+        blockNumber: chain.matches?.[0]?.blockNumber,
+        details:
+          `${caseMatch.caseNumber} — ${caseMatch.evidence.length} evidence item(s), ${anchoredCount} marked anchored at filing, ${caseMatch.auditTrail.length} audit events. ` +
+          (chain.status === 'ANCHORED'
+            ? `On-chain check of first item: ANCHORED (tx ${chain.matches?.[0]?.txHash || '—'}).`
+            : 'On-chain check of first item: no EvidenceRegistry record (pre-dates on-chain anchoring, or demo dataset).'),
+        onChain: chain.status === 'ANCHORED' ? 'ANCHORED' : chain.status === 'NOT_FOUND' ? 'NOT_FOUND' : 'UNKNOWN',
+        onChainTx: chain.matches?.[0]?.txHash,
       });
       setVerifying(false);
       return;
@@ -74,9 +124,21 @@ export function VerificationPortal({ cases }: VerificationPortalProps) {
 
     setResult({
       status: 'NOT_FOUND',
-      details: 'No on-chain record found for this identifier. If you are verifying a tampered copy, compare the local re-hash (below) with the original anchored hash — any single byte change breaks the match.',
+      details: 'No on-chain record or local case matches this identifier.',
+      onChain: 'NOT_FOUND',
     });
     setVerifying(false);
+  };
+
+  /** Real tamper demo: mutate one bit of the cached content, re-hash, compare. */
+  const runTamperDemo = async () => {
+    if (!result?.hash || result.hash.length !== 64) return;
+    const bytes = getEvidenceContent(result.hash);
+    if (!bytes) return;
+    const copy = new Uint8Array(bytes);
+    copy[0] = copy[0] ^ 0x01; // flip a single bit
+    const tampered = await computeSha256Bytes(copy.buffer.slice(0) as ArrayBuffer);
+    setTamperDemo({ original: result.hash, tampered: tampered.toLowerCase() });
   };
 
   return (
@@ -108,7 +170,7 @@ export function VerificationPortal({ cases }: VerificationPortalProps) {
           <button
             onClick={handleVerify}
             disabled={verifying}
-            className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all cursor-pointer shadow-md disabled:opacity-50 flex items-center justify-center gap-2"
+            className="px-6 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all cursor-pointer shadow-md disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {verifying ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -186,19 +248,19 @@ export function VerificationPortal({ cases }: VerificationPortalProps) {
               <p className="text-xs text-slate-600 mt-1 leading-relaxed">{result.details}</p>
 
               {result.hash && (
-                <div className="mt-4 p-4 rounded-xl bg-white border border-slate-200 space-y-1.5 text-[11px] font-mono">
+                <div className="mt-4 p-4 rounded-xl bg-white border border-slate-200 space-y-2.5 text-[11px] font-mono">
                   <div className="flex flex-wrap gap-x-6 gap-y-1">
                     <span className="text-slate-400">
                       hash: <span className="text-slate-800 font-bold">{formatHash(result.hash, 40)}</span>
                     </span>
                     {result.caseNumber && (
                       <span className="text-slate-400">
-                        case: <span className="text-blue-700 font-bold">{result.caseNumber}</span>
+                        case: <span className="text-violet-700 font-bold">{result.caseNumber}</span>
                       </span>
                     )}
-                    {result.blockNumber && (
+                    {result.blockNumber != null && (
                       <span className="text-slate-400">
-                        block: <span className="text-slate-800 font-bold">{result.blockNumber.toLocaleString()}</span>
+                        block: <span className="text-slate-800 font-bold">#{result.blockNumber.toLocaleString()}</span>
                       </span>
                     )}
                   </div>
@@ -206,6 +268,54 @@ export function VerificationPortal({ cases }: VerificationPortalProps) {
                     <span className="text-slate-400">
                       file: <span className="text-slate-800 font-bold">{result.evidenceName}</span>
                     </span>
+                  )}
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {result.onChain === 'ANCHORED' && (
+                      <span className="px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold text-[10px]">
+                        ✓ ON-CHAIN ANCHOR FOUND{result.onChainTx ? ` · ${formatHash(result.onChainTx, 14)}` : ''}
+                      </span>
+                    )}
+                    {result.onChain === 'NOT_FOUND' && (
+                      <span className="px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 font-bold text-[10px]">
+                        NO ON-CHAIN RECORD (demo-dataset item or unanchored)
+                      </span>
+                    )}
+                    {result.contentCheck === 'MATCH' && (
+                      <span className="px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold text-[10px]">
+                        ✓ CONTENT RE-HASH MATCHES
+                      </span>
+                    )}
+                    {result.contentCheck === 'MISMATCH' && (
+                      <span className="px-2 py-1 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 font-bold text-[10px]">
+                        ⚠ CONTENT TAMPERED — HASH MISMATCH
+                      </span>
+                    )}
+                    {result.contentCheck === 'UNAVAILABLE' && (
+                      <span className="px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-500 font-bold text-[10px]">
+                        CONTENT BYTES NOT IN THIS BROWSER
+                      </span>
+                    )}
+                  </div>
+                  {result.hash.length === 64 && (
+                    <button
+                      onClick={runTamperDemo}
+                      className="w-full px-3 py-2 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-[10px] font-bold transition-colors cursor-pointer"
+                    >
+                      Simulate tamper: flip 1 bit of the original bytes and re-hash
+                    </button>
+                  )}
+                  {tamperDemo && (
+                    <div className="space-y-1.5 pt-1">
+                      <p className="text-slate-400">
+                        original: <span className="text-emerald-700 font-bold">{formatHash(tamperDemo.original, 40)}</span>
+                      </p>
+                      <p className="text-slate-400">
+                        tampered: <span className="text-rose-700 font-bold">{formatHash(tamperDemo.tampered, 40)}</span>
+                      </p>
+                      <p className="text-slate-500 font-sans text-[11px] leading-relaxed">
+                        One bit changed and the fingerprint is unrecognizable — this is exactly what makes the anchored hash a tamper-proof proof of content.
+                      </p>
+                    </div>
                   )}
                 </div>
               )}
@@ -225,7 +335,7 @@ export function VerificationPortal({ cases }: VerificationPortalProps) {
           {
             icon: <Layers className="w-5 h-5" />,
             title: '2. Anchor + Pin',
-            body: 'The hash is written to EvidenceRegistry on Sepolia; the original file is pinned to IPFS at the CID stored alongside it.',
+            body: 'The hash is written to EvidenceRegistry on the local testnet (Sepolia in production); the original file is pinned to IPFS at the CID stored alongside it.',
           },
           {
             icon: <ExternalLink className="w-5 h-5" />,

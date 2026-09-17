@@ -13,7 +13,8 @@ import {
   Lock,
 } from 'lucide-react';
 import { EvidenceItem } from '../types';
-import { computeSha256, formatHash } from '../lib/crypto';
+import { computeSha256, computeSha256Bytes, formatHash } from '../lib/crypto';
+import { verifyEvidenceOnChain, getEvidenceContent } from '../lib/chain';
 
 interface EvidenceLockerProps {
   evidence: EvidenceItem[];
@@ -23,37 +24,58 @@ interface EvidenceLockerProps {
 
 export function EvidenceLocker({ evidence, caseId, onAddEvidenceClick }: EvidenceLockerProps) {
   const [tamperedId, setTamperedId] = useState<string | null>(null);
-  const [tamperedPreview, setTamperedPreview] = useState<string>('');
+  const [tamperedPreview, setTamperedPreview] = useState('');
+  const [tamperedReal, setTamperedReal] = useState(false);
   const [verifying, setVerifying] = useState<string | null>(null);
+  const [verifyResult, setVerifyResult] = useState<Record<string, 'ANCHORED' | 'NOT_FOUND' | 'UNKNOWN' | 'ERROR'>>({});
 
+  /** Real tamper: flip one bit of the ORIGINAL bytes (if cached this session) and re-hash. */
   const handleTamperSimulate = async (ev: EvidenceItem) => {
     if (tamperedId === ev.id) {
       setTamperedId(null);
       setTamperedPreview('');
+      setTamperedReal(false);
       return;
     }
     setTamperedId(ev.id);
-    const h = await computeSha256(ev.sha256Hash + ':tampered');
-    setTamperedPreview(formatHash(h, 16));
+    const bytes = getEvidenceContent(ev.sha256Hash);
+    if (bytes) {
+      const copy = new Uint8Array(bytes);
+      copy[0] = copy[0] ^ 0x01; // single-bit mutation
+      const h = await computeSha256Bytes(copy.buffer.slice(0) as ArrayBuffer);
+      setTamperedPreview(h);
+      setTamperedReal(true);
+    } else {
+      // No original bytes in this browser (demo dataset) — label it as simulated.
+      const h = await computeSha256(ev.sha256Hash + ':tampered');
+      setTamperedPreview(h);
+      setTamperedReal(false);
+    }
   };
 
+  /** Real on-chain verification against the local EvidenceRegistry. */
   const handleVerify = async (ev: EvidenceItem) => {
     setVerifying(ev.id);
-    await new Promise((r) => setTimeout(r, 600));
+    setVerifyResult((prev) => ({ ...prev, [ev.id]: 'UNKNOWN' }));
+    const res = await verifyEvidenceOnChain(ev.sha256Hash);
+    setVerifyResult((prev) => ({
+      ...prev,
+      [ev.id]: res.status === 'ANCHORED' ? 'ANCHORED' : res.status === 'NOT_FOUND' ? 'NOT_FOUND' : 'ERROR',
+    }));
     setVerifying(null);
   };
 
   return (
     <div className="space-y-4">
       {/* Explanation banner */}
-      <div className="p-5 rounded-2xl bg-blue-50/60 border border-blue-100 flex items-start gap-3">
-        <Fingerprint className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+      <div className="p-5 rounded-2xl bg-violet-50/60 border border-violet-100 flex items-start gap-3">
+        <Fingerprint className="w-5 h-5 text-violet-600 shrink-0 mt-0.5" />
         <div>
-          <h4 className="text-xs font-bold text-blue-900">Immutable Evidence Vault</h4>
-          <p className="text-[11px] text-blue-700/80 mt-1 leading-relaxed">
-            Every artefact is SHA-256 fingerprinted in the browser before upload and pinned to IPFS.
-            The hash + CID are anchored on-chain in <span className="font-mono">EvidenceRegistry</span>.
-            Use <strong>Simulate Tamper</strong> to see the integrity check break.
+          <h4 className="text-xs font-bold text-violet-900">Immutable Evidence Vault</h4>
+          <p className="text-[11px] text-violet-700/80 mt-1 leading-relaxed">
+            Every artefact is SHA-256 fingerprinted in the browser before upload.
+            The hash + CID are anchored on-chain in <span className="font-mono">EvidenceRegistry</span> (local testnet).
+            <strong>Verify on-chain</strong> queries the real registry; <strong>Simulate Tamper</strong> mutates the original bytes and re-hashes them in your browser.
           </p>
         </div>
       </div>
@@ -87,10 +109,12 @@ export function EvidenceLocker({ evidence, caseId, onAddEvidenceClick }: Evidenc
                   className={`text-[9px] font-black px-2 py-0.5 rounded-full border shrink-0 ${
                     isTampered
                       ? 'bg-rose-50 text-rose-700 border-rose-200'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : ev.onChainAnchored
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-amber-50 text-amber-700 border-amber-200'
                   }`}
                 >
-                  {isTampered ? 'INTEGRITY FAILED' : 'ANCHORED'}
+                  {isTampered ? 'INTEGRITY FAILED' : ev.onChainAnchored ? 'ON-CHAIN ANCHORED' : 'DEMO (NOT ANCHORED)'}
                 </span>
               </div>
 
@@ -106,6 +130,14 @@ export function EvidenceLocker({ evidence, caseId, onAddEvidenceClick }: Evidenc
                   <span className="text-slate-400 w-8 shrink-0">IPFS</span>
                   <span className="text-slate-600">{ev.ipfsCid ? `CID ${formatHash(ev.ipfsCid, 20)}` : 'pending pin'}</span>
                 </div>
+                {ev.onChainAnchored && ev.onChainTx && (
+                  <div className="flex items-center gap-2 text-[10px] font-mono">
+                    <span className="text-slate-400 w-8 shrink-0">CHAIN</span>
+                    <span className="text-emerald-600 font-bold">
+                      tx {formatHash(ev.onChainTx, 14)} · block #{ev.onChainBlock?.toLocaleString() ?? '—'}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Action buttons */}
@@ -113,14 +145,24 @@ export function EvidenceLocker({ evidence, caseId, onAddEvidenceClick }: Evidenc
                 <button
                   onClick={() => handleVerify(ev)}
                   disabled={verifying === ev.id}
-                  className="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-3 py-1.5 rounded-lg bg-violet-50 hover:bg-violet-100 text-violet-700 text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                 >
                   {verifying === ev.id ? (
                     <RefreshCw className="w-3 h-3 animate-spin" />
                   ) : (
                     <Shield className="w-3 h-3" />
                   )}
-                  <span>{verifying === ev.id ? 'Re-hashing…' : 'Verify Hash'}</span>
+                  <span>
+                    {verifying === ev.id
+                      ? 'Querying chain…'
+                      : verifyResult[ev.id] === 'ANCHORED'
+                      ? '✓ Anchored on-chain'
+                      : verifyResult[ev.id] === 'NOT_FOUND'
+                      ? 'No on-chain record'
+                      : verifyResult[ev.id] === 'ERROR'
+                      ? 'Chain query failed'
+                      : 'Verify on-chain'}
+                  </span>
                 </button>
 
                 <button
@@ -140,10 +182,12 @@ export function EvidenceLocker({ evidence, caseId, onAddEvidenceClick }: Evidenc
                 <div className="mt-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-[10px] text-rose-700 flex items-start gap-2">
                   <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                   <span>
-                    Local content re-hashed to <span className="font-mono font-bold">
-                      {tamperedPreview}
-                    </span>
-                    — mismatch with the anchored on-chain fingerprint. This item would be rejected by the Verifier Portal.
+                    {tamperedReal
+                      ? 'Original bytes mutated (1 bit) and re-hashed in-browser:'
+                      : 'Original bytes not present in this browser — simulated tamper:'}{' '}
+                    <span className="font-mono font-bold">{formatHash(tamperedPreview, 24)}</span>
+                    <br />
+                    Mismatch with the anchored fingerprint — this item would be rejected by the Verifier Portal.
                   </span>
                 </div>
               )}

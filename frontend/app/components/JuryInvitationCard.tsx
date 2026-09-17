@@ -11,10 +11,20 @@ interface Props {
 }
 
 export function JuryInvitationCard({ invitation: inv }: Props) {
-  const { acceptInvitation, declineInvitation } = useApp();
+  const { acceptInvitation, declineInvitation, availability, cases } = useApp();
   const [declineOpen, setDeclineOpen] = React.useState(false);
 
   const expired = new Date(inv.expiresAt).getTime() < Date.now() && inv.status === 'PENDING';
+  // Availability wiring: settings actually gate the jury flow.
+  const activeJury = cases.filter((c) => c.myRole === 'JUROR' && !c.verdictOutcome && c.status !== 'CLOSED').length;
+  const pausedReason = !availability.inPool
+    ? 'You are not in the jury pool (Settings → Jury availability).'
+    : availability.state !== 'AVAILABLE'
+    ? 'You are marked unavailable (Settings → Jury availability).'
+    : activeJury >= availability.maxConcurrent
+    ? `You already have ${activeJury} active panel(s) — max concurrent is ${availability.maxConcurrent}.`
+    : null;
+  const blocked = inv.status === 'PENDING' && !!pausedReason;
 
   return (
     <div
@@ -51,7 +61,7 @@ export function JuryInvitationCard({ invitation: inv }: Props) {
       </div>
 
       <div className="flex items-center gap-4 text-[10px] text-slate-500 font-semibold flex-wrap">
-        <span className="flex items-center gap-1.5">
+        <span suppressHydrationWarning className="flex items-center gap-1.5">
           <Clock className="w-3.5 h-3.5" />
           Accept by {new Date(inv.expiresAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
         </span>
@@ -63,16 +73,23 @@ export function JuryInvitationCard({ invitation: inv }: Props) {
 
       {inv.status === 'PENDING' && (
         <div className="flex items-center gap-2 flex-wrap">
+          {blocked && (
+            <p className="w-full text-[10.5px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Invitation paused — {pausedReason}
+            </p>
+          )}
           <button
+            suppressHydrationWarning
             onClick={() => acceptInvitation(inv.id)}
-            disabled={expired}
-            className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black transition-all shadow-md disabled:opacity-40 flex items-center justify-center gap-1.5"
+            disabled={expired || blocked}
+            className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black transition-all shadow-md disabled:opacity-40 flex items-center justify-center gap-1.5"
           >
             <Check className="w-4 h-4" />
             {expired ? 'Expired' : 'Accept & Review Case'}
           </button>
           <button
             onClick={() => setDeclineOpen(!declineOpen)}
+            disabled={blocked}
             className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold transition-all flex items-center gap-1.5"
           >
             <X className="w-4 h-4" />

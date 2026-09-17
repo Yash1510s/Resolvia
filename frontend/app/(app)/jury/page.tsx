@@ -6,6 +6,7 @@ import {
   Users,
   Clock,
   Gavel,
+  AlertTriangle,
   ArrowRight,
   ShieldCheck,
   Settings,
@@ -102,6 +103,20 @@ export default function JuryDashboard() {
           {/* AVAILABLE: invitations */}
           {tab === 'AVAILABLE' && (
             <div className="space-y-3">
+              {!availability.inPool || availability.state !== 'AVAILABLE' ? (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <p className="text-[11.5px] text-amber-800 leading-relaxed">
+                    Jury invitations are <strong>paused</strong> — {
+                      !availability.inPool
+                        ? 'you are not in the jury pool.'
+                        : 'you are marked temporarily unavailable.'
+                    }{' '}
+                    Update <Link href="/settings" className="font-bold underline underline-offset-2">Settings → Jury availability</Link>{' '}
+                    to resume. Pending invitations below stay visible but cannot be accepted until you re-qualify.
+                  </p>
+                </div>
+              ) : null}
               {pendingInvites.length === 0 && (
                 <Card className="p-8 text-center">
                   <Inbox className="w-9 h-9 text-slate-200 mx-auto" />

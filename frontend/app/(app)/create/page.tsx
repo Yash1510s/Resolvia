@@ -25,7 +25,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { DisputeCase, DisputeCategory, EvidenceItem } from '../../types';
-import { computeSha256, formatHash } from '../../lib/crypto';
+import { computeSha256, computeSha256Bytes, formatHash } from '../../lib/crypto';
+import { anchorEvidenceOnChain, storeEvidenceContent } from '../../lib/chain';
 import { useApp } from '../../lib/app-context';
 import { Card, Chip, BtnPrimary, categoryLabel } from '../../components/ui';
 
@@ -97,14 +98,14 @@ function loadDraft(): DraftState | null {
 
 const SUBMIT_PHASES = [
   'Fingerprinting evidence (SHA-256)…',
-  'Pinning evidence to IPFS…',
-  'Locking 250 RSLV escrow stake…',
+  'Anchoring evidence on-chain (EvidenceRegistry)…',
+  'Locking 500 RSLV escrow stake…',
   'Registering case on the CaseRegistry…',
   'Notifying respondent (48h response window)…',
 ];
 
 export default function CreateCasePage() {
-  const { createCase, identity } = useApp();
+  const { createCase, recordAnchors, identity } = useApp();
   const router = useRouter();
 
   const [step, setStep] = useState(0);
@@ -169,7 +170,17 @@ export default function CreateCasePage() {
     const sizeKb = file ? Math.max(1, Math.round(file.size / 1024)) : 100 + Math.floor(Math.random() * 900);
     const slot: UploadSlot = { fileName: realName, sizeKb, sha256: '', url: '', status: 'HASHING' };
     setUploads((prev) => [...prev, slot]);
-    const h = await computeSha256(realName + (file ? ':' + sizeKb : ':resolvia-evidence'));
+    // Real fingerprint: hash the actual file bytes (WebCrypto). A single-byte
+    // change in the file changes the hash — that is the tamper-evidence story.
+    // Without a file (demo quick-add) we hash a placeholder string instead.
+    let h: string;
+    if (file) {
+      const buf = await file.arrayBuffer();
+      h = await computeSha256Bytes(buf);
+      storeEvidenceContent(h, buf); // session cache for the Proof Verifier's content re-check
+    } else {
+      h = await computeSha256(realName + ':resolvia-evidence');
+    }
     setTimeout(() => {
       setUploads((prev) => prev.map((u) => (u.fileName === slot.fileName && u.status === 'HASHING' ? { ...u, sha256: h, status: 'ANCHORED' } : u)));
     }, 650);
@@ -192,12 +203,21 @@ export default function CreateCasePage() {
     SUBMIT_PHASES.forEach((_, i) => {
       setTimeout(() => setPhase(i + 1), 750 * (i + 1));
     });
-    setTimeout(() => finishSubmit(), 750 * SUBMIT_PHASES.length + 500);
+    runSubmit();
   };
 
-  const finishSubmit = () => {
+  /** Pure: build the case object (no side effects). */
+  const buildCase = () => {
     const now = new Date().toISOString();
-    const num = String(Math.floor(1000 + Math.random() * 8999));
+    // Sequential, collision-free case numbers (persisted so refreshes don't reuse them).
+    let seq = 1090;
+    try {
+      seq = Number(window.localStorage.getItem('resolvia_case_seq') || '1090') + 1;
+      window.localStorage.setItem('resolvia_case_seq', String(seq));
+    } catch {
+      seq = Math.floor(1000 + Math.random() * 8999);
+    }
+    const num = String(seq);
     const caseNumber = `RSLV-2026-${num}`;
     const evidence: EvidenceItem[] = uploads.map((u, i) => ({
       id: `ev-${Date.now()}-${i}`,
@@ -242,12 +262,52 @@ export default function CreateCasePage() {
           txHash: '0x' + formatHash(caseNumber, 64),
           blockNumber: 6284200,
           metadataHash: formatHash(caseNumber, 64),
-          details: `Case ${caseNumber} created. ${evidence.length} evidence item(s) hashed in-browser and pinned. 250 RSLV stake locked in escrow; respondent notified.`,
+          details: `Case ${caseNumber} created. ${evidence.length} evidence item(s) hashed in-browser and anchored on-chain. 500 RSLV stake locked in escrow; respondent notified.`,
         },
       ],
     };
+    return newCase;
+  };
+
+  /** Real submit: register the case, then anchor every evidence item on-chain. */
+  const runSubmit = async () => {
+    const newCase = buildCase();
     createCase(newCase);
     setCreatedCase(newCase);
+
+    // Real on-chain anchoring (EvidenceRegistry.registerEvidence).
+    // Logged-in users: backend signs with their assigned wallet.
+    // Guests: demo claimant account (local testnet).
+    let caseIdNum = 0;
+    try {
+      caseIdNum = Number(newCase.caseNumber.split('-').pop()) || 0;
+    } catch {
+      caseIdNum = 0;
+    }
+    let token: string | null = null;
+    try {
+      token = window.localStorage.getItem('resolvia_token');
+    } catch {
+      token = null;
+    }
+    const updates: { evidenceId: string; onChainTx?: string; onChainBlock?: number; status: 'ANCHORED' | 'FAILED' }[] = [];
+    for (const ev of newCase.evidence) {
+      const res = await anchorEvidenceOnChain(
+        { caseId: caseIdNum, sha256: ev.sha256Hash, ipfsCid: ev.ipfsCid },
+        token
+      );
+      updates.push({
+        evidenceId: ev.id,
+        onChainTx: res.txHash,
+        onChainBlock: res.blockNumber ?? undefined,
+        status: res.status === 'ANCHORED' ? 'ANCHORED' : 'FAILED',
+      });
+    }
+    recordAnchors(newCase.id, updates);
+
+    // Hold the success screen until both the animation and the real anchoring finish.
+    const minTime = 750 * SUBMIT_PHASES.length + 500;
+    await new Promise((r) => setTimeout(r, minTime));
     setPhase(5);
     localStorage.removeItem(DRAFT_KEY);
   };
@@ -284,10 +344,27 @@ export default function CreateCasePage() {
           <div className="mt-5 p-4 rounded-2xl bg-slate-50 border border-slate-200 text-left">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Ledger receipt</p>
             <div className="space-y-1.5 text-[11px]">
-              <p className="flex justify-between gap-4"><span className="text-slate-400 font-semibold">Transaction hash</span><span className="font-mono text-slate-700 truncate">{c.auditTrail[0].txHash.slice(0, 26)}…</span></p>
-              <p className="flex justify-between gap-4"><span className="text-slate-400 font-semibold">Block</span><span className="font-mono text-slate-700">#{c.auditTrail[0].blockNumber.toLocaleString()}</span></p>
-              <p className="flex justify-between gap-4"><span className="text-slate-400 font-semibold">Evidence anchored</span><span className="text-slate-700 font-semibold">{c.evidence.length} item(s) · SHA-256 + IPFS</span></p>
-              <p className="flex justify-between gap-4"><span className="text-slate-400 font-semibold">Escrow stake</span><span className="text-slate-700 font-semibold">250 RSLV (both parties)</span></p>
+              {(() => {
+                const anchorEvt = c.auditTrail.find((a) => a.eventNumber === 'EVENT ANCHOR');
+                const anchored = c.evidence.filter((e) => e.onChainAnchored).length;
+                const firstTx = c.evidence.find((e) => e.onChainTx)?.onChainTx;
+                return (
+                  <>
+                    <p className="flex justify-between gap-4"><span className="text-slate-400 font-semibold">Case registered</span><span className="font-mono text-slate-700 truncate">{c.caseNumber}</span></p>
+                    <p className="flex justify-between gap-4"><span className="text-slate-400 font-semibold">Evidence anchored on-chain</span><span className={`font-semibold ${anchored === c.evidence.length ? 'text-emerald-600' : 'text-amber-600'}`}>{anchored}/{c.evidence.length} item(s) · EvidenceRegistry</span></p>
+                    {firstTx && (
+                      <p className="flex justify-between gap-4"><span className="text-slate-400 font-semibold">Anchor tx</span><span className="font-mono text-slate-700 truncate">{firstTx.slice(0, 20)}…</span></p>
+                    )}
+                    {anchorEvt && (
+                      <p className="flex justify-between gap-4"><span className="text-slate-400 font-semibold">Block</span><span className="font-mono text-slate-700">#{anchorEvt.blockNumber.toLocaleString()}</span></p>
+                    )}
+                    <p className="flex justify-between gap-4"><span className="text-slate-400 font-semibold">Escrow stake</span><span className="text-slate-700 font-semibold">500 RSLV (both parties)</span></p>
+                    <Link href="/proof-verifier" className="flex items-center gap-1 text-violet-600 font-bold hover:text-violet-700 pt-1">
+                      Verify this anchor on-chain <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  </>
+                );
+              })()}
             </div>
           </div>
           <div className="mt-5 p-4 rounded-2xl bg-slate-50 border border-slate-200 text-left space-y-2.5">
@@ -328,7 +405,7 @@ export default function CreateCasePage() {
             </div>
             <div>
               <h1 className="text-lg font-black text-slate-900">Submitting your case…</h1>
-              <p className="text-[12px] text-slate-500">This is a testnet simulation of the real anchor pipeline.</p>
+              <p className="text-[12px] text-slate-500">Real pipeline on the local testnet — evidence is fingerprinted in your browser and anchored on-chain.</p>
             </div>
           </div>
           <div className="mt-6 space-y-3">

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useEffect, useMemo } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -39,14 +39,19 @@ export default function DashboardRoute() {
 }
 
 function Dashboard() {
-  const { cases, identity, invitations, setActiveRole, myJurorPseudonym } = useApp();
+  const { cases, identity, invitations, login, myJurorPseudonym } = useApp();
   const { user: authUser } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // Hydration-safe: server (UTC) and browser (local TZ) can disagree on the time of day.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
     const p = searchParams.get('persona');
-    if (p === 'CLAIMANT' || p === 'RESPONDENT' || p === 'JUROR') setActiveRole(p as MyCaseRole);
+    // Persona entry establishes a real (demo) session — the shell must reflect it.
+    if (p === 'CLAIMANT' || p === 'RESPONDENT' || p === 'JUROR') login(p as MyCaseRole);
     if (searchParams.get('new') === '1') router.replace('/create', { scroll: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -58,15 +63,19 @@ function Dashboard() {
   const studies = closedCases.filter((c) => c.caseStudy).slice(0, 3);
 
   const hour = new Date().getHours();
-  const greet = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
+  const greet = mounted
+    ? hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening'
+    : 'Hello';
   const firstName = identity.name.split(' ')[0];
 
   const upcoming = useMemo(() => {
     const list: { when: string; time: string; icon: React.ReactNode; tone: string; title: string; sub: string; href: string }[] = [];
     for (const c of activeCases.filter((c) => c.myRole)) {
       const tl = new Date(c.votingDeadline).getTime() - Date.now();
-      const when =
-        tl > 0 ? (tl < 86_400_000 ? 'Today' : tl < 172_800_000 ? 'Tomorrow' : fmtDate(c.votingDeadline).split(',')[0])
+      // "when" is relative to now → SSR/CSR can disagree; use a static date until mounted.
+      const when = !mounted
+        ? fmtDate(c.votingDeadline).split(',')[0]
+        : tl > 0 ? (tl < 86_400_000 ? 'Today' : tl < 172_800_000 ? 'Tomorrow' : fmtDate(c.votingDeadline).split(',')[0])
         : fmtDate(c.votingDeadline).split(',')[0];
       list.push({
         when,
@@ -80,8 +89,15 @@ function Dashboard() {
       });
     }
     for (const i of invitations.filter((x) => x.status === 'PENDING')) {
+      const invTl = new Date(i.expiresAt).getTime() - Date.now();
       list.push({
-        when: 'Today',
+        when: !mounted
+          ? fmtDate(i.expiresAt).split(',')[0]
+          : invTl > 0
+          ? invTl < 86_400_000
+            ? 'Today'
+            : 'Tomorrow'
+          : fmtDate(i.expiresAt).split(',')[0],
         time: new Date(i.expiresAt).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit' }),
         icon: <Gavel className="w-3.5 h-3.5" />,
         tone: 'bg-violet-100 text-violet-600',
@@ -91,7 +107,7 @@ function Dashboard() {
       });
     }
     return list.sort((a, b) => a.when.localeCompare(b.when)).slice(0, 4);
-  }, [activeCases, invitations]);
+  }, [activeCases, invitations, mounted]);
 
   const announcements = useMemo(() => {
     const icons: Record<string, React.ReactNode> = {
@@ -387,7 +403,7 @@ function Dashboard() {
                       <span className="block text-[12px] font-bold text-slate-700 group-hover:text-violet-700 transition-colors">{u.title}</span>
                       <span className="block text-[11px] text-slate-400 truncate">{u.sub}</span>
                     </span>
-                    <span className="ml-auto text-[10px] font-bold text-slate-400 shrink-0">{u.time}</span>
+                    <span suppressHydrationWarning className="ml-auto text-[10px] font-bold text-slate-400 shrink-0">{u.time}</span>
                   </Link>
                 </li>
               ))}

@@ -17,6 +17,21 @@ export async function computeSha256(data: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+/**
+ * Hashes raw bytes (real file content) via WebCrypto — the genuine evidence
+ * fingerprint path. Unlike computeSha256(string), this covers the actual byte
+ * stream, so any single-byte change in the file changes the hash.
+ */
+export async function computeSha256Bytes(data: ArrayBuffer): Promise<string> {
+  if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
+    // SSR fallback (non-browser): length-only placeholder
+    return computeSha256('bytes:' + data.byteLength);
+  }
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export function generateRandomSalt(): string {
   if (typeof window === 'undefined' || !window.crypto) {
     return '0x8f92a104c8821034';

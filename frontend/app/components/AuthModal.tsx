@@ -141,7 +141,7 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
         </button>
 
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-violet-600 text-white flex items-center justify-center">
             <Wallet className="w-5 h-5" />
           </div>
           <div>
@@ -189,7 +189,7 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
                 <button
                   onClick={sendOtp}
                   disabled={busy || !email.includes('@')}
-                  className="w-full p-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black disabled:opacity-50 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  className="w-full p-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black disabled:opacity-50 flex items-center justify-center gap-2 transition-all cursor-pointer"
                 >
                   {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
                   <span>Send verification code</span>
@@ -235,7 +235,7 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
                 <button
                   onClick={submitCode}
                   disabled={busy || code.length !== 6}
-                  className="w-full p-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black disabled:opacity-50 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  className="w-full p-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black disabled:opacity-50 flex items-center justify-center gap-2 transition-all cursor-pointer"
                 >
                   {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                   <span>Verify &amp; create my wallet</span>

@@ -80,7 +80,7 @@ export function CommunityDiscussion({ dispute }: Props) {
           <button
             onClick={handlePost}
             disabled={!body.trim()}
-            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold transition-all disabled:opacity-40 flex items-center gap-1.5"
+            className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-bold transition-all disabled:opacity-40 flex items-center gap-1.5"
           >
             <MessageSquare className="w-3.5 h-3.5" />
             Post

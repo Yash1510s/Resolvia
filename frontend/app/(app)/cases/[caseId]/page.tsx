@@ -95,7 +95,7 @@ function CaseDetails({ caseId }: { caseId: string }) {
       <div className="p-10 rounded-2xl bg-white border border-slate-200 text-center space-y-3">
         <p className="text-sm font-bold text-slate-900">Case not found</p>
         <p className="text-xs text-slate-500">This case ID does not exist in the current workspace.</p>
-        <Link href="/cases" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold">
+        <Link href="/cases" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold">
           <ArrowLeft className="w-3.5 h-3.5" /> Back to My Cases
         </Link>
       </div>
@@ -176,18 +176,18 @@ function CaseDetails({ caseId }: { caseId: string }) {
                   onClick={() => goto(s.id)}
                   className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
                     activeSection === s.id
-                      ? 'bg-blue-600 text-white shadow-sm'
+                      ? 'bg-violet-600 text-white shadow-sm'
                       : isCurrent
-                      ? 'bg-blue-50 text-blue-700'
+                      ? 'bg-violet-50 text-violet-700'
                       : 'text-slate-600 hover:bg-slate-50'
                   }`}
                 >
-                  <span className={activeSection === s.id ? 'text-white' : isCurrent ? 'text-blue-600' : 'text-slate-400'}>
+                  <span className={activeSection === s.id ? 'text-white' : isCurrent ? 'text-violet-600' : 'text-slate-400'}>
                     {SECTION_ICON[s.id]}
                   </span>
                   {s.label}
                   {isCurrent && activeSection !== s.id && (
-                    <span className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                    <span className="ml-auto w-1.5 h-1.5 rounded-full bg-violet-500"></span>
                   )}
                 </button>
               );
@@ -244,7 +244,7 @@ function DeadlineChip({ label, iso, tone = 'blue' }: { label: string; iso: strin
       ? 'bg-slate-100 text-slate-500 border-slate-200'
       : 'bg-amber-50 text-amber-700 border-amber-200';
   return (
-    <span className={`flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full border ${c}`}>
+    <span suppressHydrationWarning className={`flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full border ${c}`}>
       <Clock className="w-3 h-3" />
       {label}: {new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
       {past && ' (passed)'}
@@ -301,10 +301,10 @@ function OverviewSection({ dispute, myRole }: { dispute: DisputeCase; myRole: st
 
 function PartyCard({ label, name, wallet, stake, responded, highlight }: { label: string; name: string; wallet: string; stake: number; responded?: boolean; highlight?: boolean }) {
   return (
-    <div className={`p-4 rounded-2xl border ${highlight ? 'bg-blue-50/50 border-blue-200' : 'bg-white border-slate-200'}`}>
+    <div className={`p-4 rounded-2xl border ${highlight ? 'bg-violet-50/50 border-violet-200' : 'bg-white border-slate-200'}`}>
       <div className="flex items-center justify-between">
         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
-        {highlight && <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-blue-600 text-white">YOU</span>}
+        {highlight && <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-violet-600 text-white">YOU</span>}
         {responded && !highlight && <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200">RESPONDED</span>}
       </div>
       <p className="text-xs font-bold text-slate-900 mt-2">{name}</p>
@@ -371,7 +371,7 @@ function ResponseSection({ dispute, myRole }: { dispute: DisputeCase; myRole: st
                 setSubmitted(true);
               }}
               disabled={!text.trim() || submitted}
-              className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black transition-all shadow-md disabled:opacity-40"
+              className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black transition-all shadow-md disabled:opacity-40"
             >
               {submitted ? 'Response submitted ✓' : 'Submit Response & Counter-Stake'}
             </button>
@@ -427,7 +427,7 @@ function JurySection({ dispute, myJuror, myRole }: { dispute: DisputeCase; myJur
               <div
                 key={j.jurorId}
                 className={`p-4 rounded-2xl border bg-white ${
-                  myJuror && j.jurorId === myJuror.jurorId ? 'border-blue-300 ring-1 ring-blue-100' : 'border-slate-200'
+                  myJuror && j.jurorId === myJuror.jurorId ? 'border-violet-300 ring-1 ring-violet-100' : 'border-slate-200'
                 }`}
               >
                 <JurorBadge juror={j} isYou={!!myJuror && j.jurorId === myJuror.jurorId} />

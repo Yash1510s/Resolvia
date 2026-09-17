@@ -75,7 +75,7 @@ def health_check():
     return {
         "status": "HEALTHY",
         "contracts": contracts,
-        "aiService": "READY"
+        "aiService": "READY (heuristic pipeline — LLM advisory pending)" if EvidenceAnalyzer else "UNAVAILABLE"
     }
 
 @app.post("/api/ai/analyze")

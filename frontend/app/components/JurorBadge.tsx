@@ -15,7 +15,7 @@ export function JurorBadge({ juror, isYou = false }: { juror: JurorAssignment; i
     <div className="flex items-center gap-2">
       <div
         className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-          isYou ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'
+          isYou ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-500'
         }`}
         title={ANONYMITY_TITLE}
       >
@@ -24,7 +24,7 @@ export function JurorBadge({ juror, isYou = false }: { juror: JurorAssignment; i
       <div className="leading-tight">
         <p className="text-[11px] font-bold text-slate-900 flex items-center gap-1.5">
           {isYou && (
-            <span className="text-[8px] bg-blue-600 text-white px-1.5 py-0.5 rounded-full font-black">YOU</span>
+            <span className="text-[8px] bg-violet-600 text-white px-1.5 py-0.5 rounded-full font-black">YOU</span>
           )}
           <span className="font-mono">Juror {label}</span>
         </p>
