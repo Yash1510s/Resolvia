@@ -22,6 +22,7 @@ import { useApp } from '../../lib/app-context';
 import { JuryInvitationCard } from '../../components/JuryInvitationCard';
 import { isClosed } from '../../lib/caseLifecycle';
 import { Card, Chip, categoryLabel, fmtDate, shortCaseId, statusTone } from '../../components/ui';
+import { LiveCountdownDisplay } from '../../components/LiveCountdown';
 
 type Tab = 'AVAILABLE' | 'IN_PROGRESS' | 'COMPLETED' | 'IMPACT' | 'GUIDELINES';
 
@@ -257,20 +258,18 @@ export default function JuryDashboard() {
           </Card>
 
           {nextDeadline !== null && (
-            <Card className="p-5">
-              <p className="text-[11px] font-bold text-slate-400">Voting Closes In</p>
-              <p className="text-[22px] font-black text-slate-900 mt-1">
-                {(() => {
-                  const diff = nextDeadline - Date.now();
-                  if (diff <= 0) return 'Deadline passed';
-                  const d = Math.floor(diff / 86_400_000);
-                  const h = Math.floor((diff % 86_400_000) / 3_600_000);
-                  const m = Math.floor((diff % 3_600_000) / 60_000);
-                  const s = Math.floor((diff % 60_000) / 1000);
-                  return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
-                })()}
+            <Card className="p-5 border-slate-200/80 shadow-sm bg-gradient-to-br from-white to-slate-50/50">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Voting Closes In</p>
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 shadow-xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Protocol Consensus Live
+                </span>
+              </div>
+              <LiveCountdownDisplay target={nextDeadline} />
+              <p className="text-[11px] text-slate-400 mt-2.5 leading-relaxed">
+                After the consensus deadline, the cryptographic verdict will be finalized on-chain based on jury quorum.
               </p>
-              <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">After the deadline, the verdict will be finalized based on jury consensus.</p>
             </Card>
           )}
 
@@ -310,7 +309,7 @@ function CaseRow({ caseId, title, category, status, deadline, summary, cta, mute
   const cat = categoryLabel(category);
   return (
     <Link href={muted ? `/case-studies/${caseId}` : `/jury/${caseId}`} className="block">
-      <Card className={`p-4 flex flex-wrap items-center gap-4 hover:border-violet-300 transition-colors ${muted ? '' : ''}`}>
+      <Card className="p-4 flex flex-wrap items-center gap-4 hover:border-violet-300 transition-colors">
         <div className="w-10 h-10 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center shrink-0">
           <Gavel className="w-5 h-5" />
         </div>
@@ -324,7 +323,13 @@ function CaseRow({ caseId, title, category, status, deadline, summary, cta, mute
           <p className="text-[11px] text-slate-400 mt-0.5 truncate max-w-lg">{summary}</p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-[11px] font-semibold text-slate-500">{muted ? 'Closed' : 'Vote by'} {fmtDate(deadline)}</p>
+          {deadline && !muted ? (
+            <div className="mb-1 flex justify-end">
+              <LiveCountdownDisplay target={deadline} compact />
+            </div>
+          ) : (
+            <p className="text-[11px] font-semibold text-slate-500">{muted ? 'Closed' : 'Vote by'} {fmtDate(deadline)}</p>
+          )}
           <span className="text-[10px] font-black text-violet-600 inline-flex items-center gap-1 mt-1">
             {cta} <ArrowRight className="w-3 h-3" />
           </span>

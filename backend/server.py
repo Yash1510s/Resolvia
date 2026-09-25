@@ -27,10 +27,20 @@ app = FastAPI(
     version="1.1.0"
 )
 
+# Production-ready CORS origin configuration
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001"
+    ).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS if "*" not in ALLOWED_ORIGINS else ["*"],
+    allow_credentials=True if "*" not in ALLOWED_ORIGINS else False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -72,10 +82,11 @@ def health_check():
             contracts = json.load(f)["contracts"]
     except Exception:
         contracts = {"note": "manifest not found"}
+    ai_status = EvidenceAnalyzer.get_status() if EvidenceAnalyzer else {"available": False, "status": "UNAVAILABLE"}
     return {
         "status": "HEALTHY",
         "contracts": contracts,
-        "aiService": "READY (heuristic pipeline — LLM advisory pending)" if EvidenceAnalyzer else "UNAVAILABLE"
+        "aiService": ai_status,
     }
 
 @app.post("/api/ai/analyze")

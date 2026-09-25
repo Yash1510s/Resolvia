@@ -127,7 +127,7 @@ export default function CreateCasePage() {
   const [createdCase, setCreatedCase] = useState<DisputeCase | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const claimantName = identity.name === 'Demo User' ? 'Demo User (You)' : identity.name;
+  const claimantName = identity?.name ? `${identity.name} (You)` : 'You';
 
   // Draft restore (once)
   useEffect(() => {
@@ -490,9 +490,9 @@ export default function CreateCasePage() {
                 </div>
               ))}
             </div>
-            <div className="mt-5 p-4 rounded-xl bg-amber-50 border border-amber-200 text-[11.5px] text-amber-800 leading-relaxed">
-              <strong>Good to know:</strong> a 250 RSLV stake is escrowed from each party to deter frivolous filings (testnet tokens).
-              The AI advisory is <strong>non-binding</strong> — the human jury's verdict is the only binding outcome. This is a prototype running on a local testnet.
+            <div className="mt-5 p-4 rounded-xl bg-violet-50 border border-violet-200 text-[11.5px] text-violet-900 leading-relaxed">
+              <strong>Anti-Spam Escrow:</strong> A 250 RSLV stake is locked from each party in the smart contract escrow to deter bad-faith filings.
+              The AI advisory provides <strong>objective advisory analysis</strong> — only the human jury's cryptographic consensus renders the binding outcome.
             </div>
           </div>
         )}
@@ -687,13 +687,13 @@ export default function CreateCasePage() {
             <div className="p-5 rounded-2xl bg-violet-50/60 border border-violet-100">
               <h4 className="text-[13px] font-bold text-violet-900 flex items-center gap-2"><Coins className="w-4 h-4" /> Escrow Stake</h4>
               <p className="text-[11.5px] text-violet-800/80 mt-2 leading-relaxed">
-                A <strong>250 RSLV</strong> stake from each party is locked in the ArbitrationHub contract (testnet tokens). The losing side's stake funds the winner + jury rewards. This deters frivolous filings.
+                A <strong>250 RSLV</strong> stake from each party is locked in the ArbitrationHub contract. The losing party's stake funds the prevailing party plus jury consensus rewards according to protocol rules.
               </p>
             </div>
-            <label className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200 cursor-pointer">
+            <label className="flex items-start gap-3 p-4 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
               <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-0.5 w-4 h-4 accent-violet-600" />
-              <span className="text-[11.5px] text-amber-900 leading-relaxed">
-                <strong>I confirm</strong> the details above are accurate. I understand the case will be resolved by the Resolvia jury protocol; the AI advisory is non-binding; the human jury's verdict is final and enforced via escrow settlement. This is a prototype — testnet/demo data only.
+              <span className="text-[11.5px] text-slate-800 leading-relaxed">
+                <strong>I confirm</strong> the details above are accurate. I understand this case will be resolved under the Resolvia decentralized jury protocol; the AI advisory is non-binding; the human jury's cryptographic consensus verdict is final and enforced via on-chain smart escrow settlement.
               </span>
             </label>
           </div>

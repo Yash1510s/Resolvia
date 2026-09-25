@@ -47,7 +47,7 @@ const ROLES: { id: RoleType; icon: React.ReactNode; title: string; sub: string }
 
 export default function SignupPage() {
   return (
-    <AuthLayout back="/home" backLabel="Back to Home">
+    <AuthLayout back="/" backLabel="Back to Home">
       <AppProvider>
         <SignupInner />
       </AppProvider>

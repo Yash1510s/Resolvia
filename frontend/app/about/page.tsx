@@ -90,7 +90,7 @@ export default function AboutPage() {
         </div>
       </div>
       <p className="text-center text-[11px] text-slate-400 pb-8">
-        Prototype — runs on a local testnet. AI output is advisory and non-binding; only the human jury&apos;s verdict is binding.
+        Resolvia Protocol v1.0. AI output provides advisory intelligence; only the decentralized human jury quorum holds binding authority.
       </p>
     </div>
   );

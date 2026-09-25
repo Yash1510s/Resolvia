@@ -66,7 +66,7 @@ function Dashboard() {
   const greet = mounted
     ? hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening'
     : 'Hello';
-  const firstName = identity.name.split(' ')[0];
+  const firstName = (authUser?.name || identity.name || 'Yash').split(' ')[0];
 
   const upcoming = useMemo(() => {
     const list: { when: string; time: string; icon: React.ReactNode; tone: string; title: string; sub: string; href: string }[] = [];

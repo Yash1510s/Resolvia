@@ -161,12 +161,16 @@ export async function getManagedNonce(address: string): Promise<number> {
 
 export function getProvider(): JsonRpcProvider {
   if (!_provider) {
-    _provider = new JsonRpcProvider("/api/rpc");
+    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || "/api/rpc";
+    _provider = new JsonRpcProvider(rpcUrl);
   }
   return _provider;
 }
 
 export function getWallet(account: DemoAccount): Wallet {
+  if (process.env.NODE_ENV === "production" && !process.env.NEXT_PUBLIC_ALLOW_DEMO_KEYS) {
+    console.warn("[Resolvia] Demo signers should only be used on testnets (Sepolia/Local).");
+  }
   return new Wallet(account.pk, getProvider());
 }
 

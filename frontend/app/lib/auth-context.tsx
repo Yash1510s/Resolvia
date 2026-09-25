@@ -16,6 +16,7 @@ interface AuthContextValue {
   requestOtp: (email: string) => Promise<{ devCode?: string; error?: string }>;
   verifyOtp: (email: string, code: string) => Promise<{ error?: string }>;
   googleLogin: (credential: string) => Promise<{ error?: string }>;
+  walletLogin: (walletAddress: string, name?: string) => Promise<{ error?: string }>;
   logout: () => void;
 }
 
@@ -25,6 +26,7 @@ const AuthCtx = createContext<AuthContextValue>({
   requestOtp: async () => ({ error: 'unavailable' }),
   verifyOtp: async () => ({ error: 'unavailable' }),
   googleLogin: async () => ({ error: 'unavailable' }),
+  walletLogin: async () => ({ error: 'unavailable' }),
   logout: () => {},
 });
 
@@ -119,13 +121,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [adopt]
   );
 
+  const walletLogin = useCallback(
+    async (walletAddress: string, name?: string) => {
+      try {
+        const d = await api<{ token: string; user: AuthUser }>('auth/wallet', {
+          method: 'POST',
+          body: JSON.stringify({ wallet: walletAddress, name: name || 'Yash Vijay Singh' }),
+        });
+        adopt(d.token, d.user);
+        return {};
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    },
+    [adopt]
+  );
+
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     setUser(null);
   }, []);
 
   return (
-    <AuthCtx.Provider value={{ user, loading, requestOtp, verifyOtp, googleLogin, logout }}>
+    <AuthCtx.Provider value={{ user, loading, requestOtp, verifyOtp, googleLogin, walletLogin, logout }}>
       {children}
     </AuthCtx.Provider>
   );

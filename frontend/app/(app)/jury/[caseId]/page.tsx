@@ -19,29 +19,14 @@ import {
   ScrollText,
   ChevronDown,
   Scale,
+  Hourglass,
+  Gavel,
 } from 'lucide-react';
 import { useApp } from '../../../lib/app-context';
 import { CommitRevealVoting } from '../../../components/CommitRevealVoting';
 import { Card, Chip, categoryLabel, fmtDate, shortCaseId } from '../../../components/ui';
+import { LiveCountdownDisplay } from '../../../components/LiveCountdown';
 import type { EvidenceItem } from '../../../types';
-
-function useCountdown(iso?: string) {
-  // Hydration-safe: start null (SSR), tick only after mount — server/client clocks differ.
-  const [now, setNow] = useState<number | null>(null);
-  React.useEffect(() => {
-    setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-  if (!iso || now === null) return null;
-  const diff = new Date(iso).getTime() - now;
-  if (diff <= 0) return { text: 'Deadline passed', urgent: false };
-  const d = Math.floor(diff / 86_400_000);
-  const h = Math.floor((diff % 86_400_000) / 3_600_000);
-  const m = Math.floor((diff % 3_600_000) / 60_000);
-  const s = Math.floor((diff % 60_000) / 1000);
-  return { text: `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`, urgent: h < 6 };
-}
 
 function EvidenceThumb({ ev }: { ev: EvidenceItem }) {
   const isPdf = ev.mimeType === 'application/pdf' || ev.fileName.toLowerCase().endsWith('.pdf');
@@ -73,12 +58,11 @@ function EvidenceThumb({ ev }: { ev: EvidenceItem }) {
 
 export default function JurorWorkspace({ params }: { params: Promise<{ caseId: string }> }) {
   const { caseId } = React.use(params);
-  const { getCase, identity, myJurorPseudonym, commitVote, revealVote, simulateOtherJurors, addDeliberationPost, availability } = useApp();
+  const { getCase, identity, myJurorPseudonym, commitVote, revealVote, simulateOtherJurors, addDeliberationPost } = useApp();
   const dispute = getCase(caseId);
   const [expanded, setExpanded] = useState(false);
   const [evFilter, setEvFilter] = useState<'ALL' | 'Claimant' | 'Respondent'>('ALL');
   const [delText, setDelText] = useState('');
-  const countdown = useCountdown(dispute?.votingDeadline);
 
   const tags = useMemo(() => {
     if (!dispute) return [];
@@ -100,8 +84,6 @@ export default function JurorWorkspace({ params }: { params: Promise<{ caseId: s
   const isMyCase = dispute.myRole === 'JUROR';
   const myJuror = isMyCase ? dispute.jurors.find((j) => j.walletAddress === identity.wallet) || dispute.jurors[0] : undefined;
   const voted = myJuror?.status === 'REVEALED';
-  // Step 2 ("Analyze & Deliberate") activates once the juror has actually reviewed
-  // (read the full claim or posted in deliberation) — before that it is step 1.
   const [analyzed, setAnalyzed] = useState(false);
   const step = voted || myJuror?.status === 'COMMITTED' ? 3 : analyzed ? 2 : 1;
   const cat = categoryLabel(dispute.category);
@@ -115,6 +97,13 @@ export default function JurorWorkspace({ params }: { params: Promise<{ caseId: s
     addDeliberationPost(dispute.id, delText.trim());
     setDelText('');
     setAnalyzed(true);
+  };
+
+  const scrollToSection = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   };
 
   return (
@@ -146,8 +135,8 @@ export default function JurorWorkspace({ params }: { params: Promise<{ caseId: s
           </Link>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-[270px_1fr_350px] gap-4">
-          {/* ═══ Left: case card ═══ */}
+        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] 2xl:grid-cols-[280px_1fr_320px] gap-5 items-start">
+          {/* ═══ Column 1: Case Details & Metadata ═══ */}
           <div className="space-y-4">
             <Card className="p-5">
               <div className="flex items-center justify-between gap-2">
@@ -155,14 +144,14 @@ export default function JurorWorkspace({ params }: { params: Promise<{ caseId: s
                 <Chip tone={cat.tone}>{cat.label}</Chip>
               </div>
               <p className="text-[10.5px] text-slate-400 mt-1">Submitted on {fmtDate(dispute.createdAt)}</p>
-              <h2 className="text-[17px] font-black text-slate-900 mt-2.5 leading-snug">{dispute.title}</h2>
+              <h2 className="text-[16px] font-black text-slate-900 mt-2.5 leading-snug">{dispute.title}</h2>
               <p className={`text-[12px] text-slate-500 mt-2 leading-relaxed ${expanded ? '' : 'line-clamp-3'}`}>{dispute.claimSummary}</p>
               <button
                 onClick={() => {
                   setExpanded(!expanded);
                   if (!expanded) setAnalyzed(true);
                 }}
-                className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700 mt-1.5"
+                className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700 mt-1.5 cursor-pointer"
               >
                 {expanded ? 'Show less' : 'Read More'} <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
               </button>
@@ -183,11 +172,11 @@ export default function JurorWorkspace({ params }: { params: Promise<{ caseId: s
               </div>
 
               <div className="mt-4">
-                <p className="text-[11px] font-black text-slate-900 mb-2">Case Summary</p>
+                <p className="text-[11px] font-black text-slate-900 mb-1.5">Case Summary</p>
                 <p className="text-[11.5px] text-slate-500 leading-relaxed">{dispute.claimSummary}</p>
                 {dispute.counterClaimSummary && (
                   <>
-                    <p className="text-[11px] font-black text-slate-900 mt-3 mb-1.5">Respondent&apos;s Position</p>
+                    <p className="text-[11px] font-black text-slate-900 mt-3 mb-1">Respondent&apos;s Position</p>
                     <p className="text-[11.5px] text-slate-500 leading-relaxed">{dispute.counterClaimSummary}</p>
                   </>
                 )}
@@ -203,7 +192,7 @@ export default function JurorWorkspace({ params }: { params: Promise<{ caseId: s
               </div>
             </Card>
 
-            {/* AI locked */}
+            {/* AI locked advisory */}
             <div className="p-4 rounded-2xl bg-slate-900 text-white">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
@@ -219,146 +208,292 @@ export default function JurorWorkspace({ params }: { params: Promise<{ caseId: s
                 </div>
               </div>
             </div>
+
+            {/* ZK Identity Guarantee */}
+            <div className="p-4 rounded-2xl bg-violet-50 border border-violet-100 flex items-start gap-2.5">
+              <ShieldCheck className="w-4 h-4 text-violet-600 shrink-0 mt-0.5" />
+              <p className="text-[10.5px] text-violet-900 leading-relaxed">
+                <strong>Zero-Knowledge Identity Protection:</strong> Parties and peers only see <span className="font-mono font-bold">{myJurorPseudonym}</span>.
+                Your real wallet address, email, and identity are never exposed.
+              </p>
+            </div>
           </div>
 
-          {/* ═══ Center: review & deliberate ═══ */}
-          <div className="min-w-0 space-y-4">
-            {/* Step indicator */}
-            <Card className="p-5">
-              <div className="flex items-center">
+          {/* ═══ Column 2: Main Review, Deliberation & Voting Workspace ═══ */}
+          <div className="min-w-0 space-y-5">
+            {/* Step navigation indicator */}
+            <Card className="p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-1 sm:gap-2">
                 {[
-                  { n: 1, l: 'Review Evidence' },
-                  { n: 2, l: 'Analyze & Deliberate' },
-                  { n: 3, l: 'Cast Your Vote' },
+                  { n: 1, l: 'Review Evidence', id: 'evidence-section' },
+                  { n: 2, l: 'Analyze & Deliberate', id: 'deliberation-section' },
+                  { n: 3, l: 'Cast Your Vote', id: 'voting-section' },
                 ].map((s, i) => (
                   <React.Fragment key={s.n}>
-                    <div className="flex flex-col items-center gap-1.5 w-28 sm:w-36">
-                      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[13px] font-black transition-all ${s.n < step || voted ? 'bg-emerald-500 text-white' : s.n === step ? 'bg-violet-600 text-white ring-4 ring-violet-100' : 'bg-slate-100 text-slate-400'}`}>
+                    <button
+                      type="button"
+                      onClick={() => scrollToSection(s.id)}
+                      className="flex flex-col items-center gap-1.5 flex-1 cursor-pointer group transition-all text-center focus:outline-none"
+                    >
+                      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[13px] font-black transition-all ${
+                        s.n < step || voted
+                          ? 'bg-emerald-500 text-white shadow-xs group-hover:bg-emerald-600'
+                          : s.n === step
+                          ? 'bg-violet-600 text-white ring-4 ring-violet-100 group-hover:bg-violet-700 shadow-sm'
+                          : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'
+                      }`}>
                         {s.n < step || voted ? <CheckCircle2 className="w-4.5 h-4.5" /> : s.n}
                       </div>
-                      <span className={`text-[10px] font-bold text-center ${s.n === step && !voted ? 'text-violet-700' : 'text-slate-400'}`}>{s.l}</span>
-                    </div>
-                    {i < 2 && <div className={`flex-1 h-0.5 rounded mb-5 ${s.n < step || voted ? 'bg-emerald-400' : 'bg-slate-200'}`} />}
+                      <span className={`text-[10px] sm:text-[11px] font-bold text-center transition-colors ${
+                        s.n === step && !voted ? 'text-violet-700' : 'text-slate-500 group-hover:text-slate-800'
+                      }`}>{s.l}</span>
+                    </button>
+                    {i < 2 && <div className={`flex-1 max-w-16 h-0.5 rounded mb-5 ${s.n < step || voted ? 'bg-emerald-400' : 'bg-slate-200'}`} />}
                   </React.Fragment>
                 ))}
               </div>
             </Card>
 
-            {/* Evidence & Statements */}
-            <Card className="p-5">
-              <div className="flex items-center justify-between mb-3.5">
-                <h3 className="text-[14px] font-black text-slate-900">Evidence &amp; Statements</h3>
-                <span className="text-[11px] font-bold text-violet-600">{evAll.length} items</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5 mb-4">
-                {(
-                  [
-                    { id: 'ALL', l: `All Evidence (${evAll.length})` },
-                    { id: 'Claimant', l: `Claimant (${claimantEv})` },
-                    { id: 'Respondent', l: `Respondent (${respondentEv})` },
-                  ] as const
-                ).map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => setEvFilter(t.id)}
-                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${evFilter === t.id ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-                  >
-                    {t.l}
-                  </button>
-                ))}
-              </div>
-
-              <div className="grid sm:grid-cols-3 gap-3">
-                {evFiltered.map((ev) => (
-                  <div key={ev.id} className="p-3 rounded-xl border border-slate-200">
-                    <EvidenceThumb ev={ev} />
-                    <div className="flex items-center gap-1.5 mt-2.5">
-                      {ev.mimeType.startsWith('video/') ? <Play className="w-3 h-3 text-violet-600" /> : ev.mimeType === 'application/pdf' ? <FileText className="w-3 h-3 text-rose-500" /> : <FileImage className="w-3 h-3 text-blue-500" />}
-                      <span className="text-[10.5px] font-bold text-slate-700 truncate">{ev.fileName}</span>
-                    </div>
-                    <p className="text-[9.5px] text-slate-400 mt-1">
-                      Submitted by {ev.submittedBy} · {fmtDate(ev.submittedAt).split(',')[0]}
-                    </p>
-                    <p className="text-[8.5px] font-mono text-slate-300 truncate mt-1">SHA-256 {ev.sha256Hash.slice(0, 18)}…</p>
-                  </div>
-                ))}
-                {evFiltered.length === 0 && <p className="text-[12px] text-slate-400 col-span-3 py-6 text-center">No evidence from this party yet.</p>}
-              </div>
-
-              {/* Statements */}
-              <div className="grid md:grid-cols-2 gap-3.5 mt-4">
-                <div className="p-4 rounded-xl border border-slate-200">
-                  <p className="text-[12px] font-black text-slate-900 flex items-center gap-2">
-                    <ScrollText className="w-4 h-4 text-blue-500" /> Claimant&apos;s Statement
-                  </p>
-                  <p className="text-[11.5px] text-slate-600 mt-2 leading-relaxed">{dispute.claimSummary}</p>
-                  <p className="text-[11px] text-slate-400 mt-2.5 border-t border-slate-100 pt-2">
-                    <strong className="text-slate-500">Relief sought:</strong> {dispute.reliefSought}
-                  </p>
-                </div>
-                <div className="p-4 rounded-xl border border-slate-200">
-                  <p className="text-[12px] font-black text-slate-900 flex items-center gap-2">
-                    <ScrollText className="w-4 h-4 text-rose-500" /> Respondent&apos;s Statement
-                  </p>
-                  <p className="text-[11.5px] text-slate-600 mt-2 leading-relaxed">
-                    {dispute.counterClaimSummary || <span className="italic text-slate-400">No response recorded yet.</span>}
-                  </p>
-                </div>
-              </div>
-            </Card>
-
-            {/* Deliberation */}
-            {dispute.status !== 'CLOSED' && dispute.status !== 'VERDICT' && (
+            {/* Step 1: Evidence & Statements */}
+            <div id="evidence-section" className="scroll-mt-20">
               <Card className="p-5">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-[14px] font-black text-slate-900 flex items-center gap-2">
-                    <MessageSquare className="w-4.5 h-4.5 text-violet-600" /> Discussion &amp; Deliberation (Anonymous)
-                  </h3>
-                  <span className="text-[10px] font-bold text-slate-400">{(dispute.deliberation || []).length} posts</span>
+                <div className="flex items-center justify-between mb-3.5 flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-lg bg-violet-100 text-violet-700 text-xs font-black flex items-center justify-center">1</span>
+                    <h3 className="text-[14px] font-black text-slate-900">Evidence &amp; Statements</h3>
+                  </div>
+                  <span className="text-[11px] font-bold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-md border border-violet-100">
+                    {evAll.length} items submitted
+                  </span>
                 </div>
-                <p className="text-[11px] text-slate-400 mb-3.5">
-                  Discuss the case with fellow jurors. All participants remain anonymous. Deliberation is private to this panel and ends when voting closes.
-                </p>
-                <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-                  {(dispute.deliberation || []).length === 0 && (
-                    <p className="text-[11.5px] text-slate-400 text-center py-4">No deliberation posts yet. Start the discussion once you have reviewed the evidence.</p>
-                  )}
-                  {(dispute.deliberation || []).map((p) => (
-                    <div key={p.id} className="flex items-start gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-violet-400 to-indigo-500 flex items-center justify-center text-white text-[10px] font-black shrink-0">
-                        {(p.author || '?').replace('#', '').charAt(0)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[11.5px] font-bold text-slate-800">
-                          {p.authorBadge || p.author} <span className="text-slate-400 font-medium">· Juror (anonymous)</span>
-                          <span className="float-right text-[9.5px] text-slate-400 font-medium">{fmtDate(p.createdAt).split(',')[0]}</span>
-                        </p>
-                        <p className="text-[11.5px] text-slate-600 mt-0.5 leading-relaxed">{p.body}</p>
-                      </div>
-                    </div>
+
+                <div className="flex flex-wrap gap-1.5 mb-4">
+                  {(
+                    [
+                      { id: 'ALL', l: `All Evidence (${evAll.length})` },
+                      { id: 'Claimant', l: `Claimant (${claimantEv})` },
+                      { id: 'Respondent', l: `Respondent (${respondentEv})` },
+                    ] as const
+                  ).map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => setEvFilter(t.id)}
+                      className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                        evFilter === t.id ? 'bg-violet-600 text-white shadow-xs' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                      }`}
+                    >
+                      {t.l}
+                    </button>
                   ))}
                 </div>
-                <div className="flex items-center gap-2 mt-4">
-                  <div className="w-9 h-9 rounded-full bg-violet-600 flex items-center justify-center text-white text-[11px] font-black shrink-0">
-                    {(myJurorPseudonym || 'J').charAt(0)}
+
+                <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {evFiltered.map((ev) => (
+                    <div key={ev.id} className="p-3 rounded-xl border border-slate-200 hover:border-slate-300 transition-colors bg-white">
+                      <EvidenceThumb ev={ev} />
+                      <div className="flex items-center gap-1.5 mt-2.5">
+                        {ev.mimeType.startsWith('video/') ? (
+                          <Play className="w-3 h-3 text-violet-600 shrink-0" />
+                        ) : ev.mimeType === 'application/pdf' ? (
+                          <FileText className="w-3 h-3 text-rose-500 shrink-0" />
+                        ) : (
+                          <FileImage className="w-3 h-3 text-blue-500 shrink-0" />
+                        )}
+                        <span className="text-[11px] font-bold text-slate-800 truncate">{ev.fileName}</span>
+                      </div>
+                      <p className="text-[9.5px] text-slate-400 mt-1">
+                        Submitted by {ev.submittedBy} · {fmtDate(ev.submittedAt).split(',')[0]}
+                      </p>
+                      <p className="text-[8.5px] font-mono text-slate-400 truncate mt-1">SHA-256 {ev.sha256Hash.slice(0, 18)}…</p>
+                    </div>
+                  ))}
+                  {evFiltered.length === 0 && <p className="text-[12px] text-slate-400 col-span-3 py-6 text-center">No evidence from this party yet.</p>}
+                </div>
+
+                {/* Statements */}
+                <div className="grid md:grid-cols-2 gap-3.5 mt-4">
+                  <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50">
+                    <p className="text-[12px] font-black text-slate-900 flex items-center gap-2">
+                      <ScrollText className="w-4 h-4 text-blue-500" /> Claimant&apos;s Statement
+                    </p>
+                    <p className="text-[11.5px] text-slate-600 mt-2 leading-relaxed">{dispute.claimSummary}</p>
+                    <p className="text-[11px] text-slate-400 mt-2.5 border-t border-slate-200/60 pt-2">
+                      <strong className="text-slate-600">Relief sought:</strong> {dispute.reliefSought}
+                    </p>
                   </div>
-                  <input
-                    value={delText}
-                    onChange={(e) => setDelText(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && postDeliberation()}
-                    placeholder="Share your thoughts (anonymously)…"
-                    className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-violet-400 focus:bg-white outline-none text-[12px] transition-colors"
-                  />
-                  <button onClick={postDeliberation} disabled={!delText.trim()} className="w-10 h-10 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 flex items-center justify-center text-white transition-colors shrink-0">
-                    <Send className="w-4 h-4" />
-                  </button>
+                  <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50">
+                    <p className="text-[12px] font-black text-slate-900 flex items-center gap-2">
+                      <ScrollText className="w-4 h-4 text-rose-500" /> Respondent&apos;s Statement
+                    </p>
+                    <p className="text-[11.5px] text-slate-600 mt-2 leading-relaxed">
+                      {dispute.counterClaimSummary || <span className="italic text-slate-400">No response recorded yet.</span>}
+                    </p>
+                  </div>
                 </div>
               </Card>
+            </div>
+
+            {/* Step 2: Deliberation Forum */}
+            {dispute.status !== 'CLOSED' && dispute.status !== 'VERDICT' && (
+              <div id="deliberation-section" className="scroll-mt-20">
+                <Card className="p-5">
+                  <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-lg bg-violet-100 text-violet-700 text-xs font-black flex items-center justify-center">2</span>
+                      <h3 className="text-[14px] font-black text-slate-900 flex items-center gap-2">
+                        <MessageSquare className="w-4.5 h-4.5 text-violet-600" /> Discussion &amp; Deliberation (Anonymous)
+                      </h3>
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                      {(dispute.deliberation || []).length} posts
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mb-3.5">
+                    Discuss findings with fellow empanelled jurors. All communications are pseudonymized.
+                  </p>
+                  <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                    {(dispute.deliberation || []).length === 0 && (
+                      <p className="text-[11.5px] text-slate-400 text-center py-4">No deliberation posts yet. Share your findings or questions once you have inspected the evidence.</p>
+                    )}
+                    {(dispute.deliberation || []).map((p) => (
+                      <div key={p.id} className="flex items-start gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-violet-400 to-indigo-500 flex items-center justify-center text-white text-[10px] font-black shrink-0">
+                          {(p.author || '?').replace('#', '').charAt(0)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[11.5px] font-bold text-slate-800">
+                            {p.authorBadge || p.author} <span className="text-slate-400 font-medium">· Juror (anonymous)</span>
+                            <span className="float-right text-[9.5px] text-slate-400 font-medium">{fmtDate(p.createdAt).split(',')[0]}</span>
+                          </p>
+                          <p className="text-[11.5px] text-slate-600 mt-0.5 leading-relaxed">{p.body}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 mt-4">
+                    <div className="w-9 h-9 rounded-full bg-violet-600 flex items-center justify-center text-white text-[11px] font-black shrink-0">
+                      {(myJurorPseudonym || 'J').charAt(0)}
+                    </div>
+                    <input
+                      value={delText}
+                      onChange={(e) => setDelText(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && postDeliberation()}
+                      placeholder="Share your finding or question (anonymously)…"
+                      className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-violet-400 focus:bg-white outline-none text-[12px] transition-colors"
+                    />
+                    <button onClick={postDeliberation} disabled={!delText.trim()} className="w-10 h-10 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 flex items-center justify-center text-white transition-colors shrink-0 cursor-pointer">
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
+                </Card>
+              </div>
             )}
+
+            {/* Step 3: Cast Your Vote (Commit–Reveal Cryptographic Console) */}
+            <div id="voting-section" className="scroll-mt-20 space-y-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-6 h-6 rounded-lg bg-violet-600 text-white text-xs font-black flex items-center justify-center">3</span>
+                  <div>
+                    <h3 className="text-[15px] font-black text-slate-900">Step 3: Cast Your Vote</h3>
+                    <p className="text-[11px] text-slate-400">
+                      Cryptographic Commit–Reveal protocol guarantees un-coerced, tamper-proof voting consensus.
+                    </p>
+                  </div>
+                </div>
+                {voted && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Verdict Counted &amp; Finalized
+                  </span>
+                )}
+              </div>
+
+              {/* Full-width Voting Console Component */}
+              <CommitRevealVoting
+                jurors={dispute.jurors}
+                currentJurorId={myJuror!.jurorId}
+                votingDeadline={dispute.votingDeadline}
+                onCommitVote={(jurorId, commitment, vote, salt, reasoning) => commitVote(dispute.id, jurorId, commitment, vote, salt, reasoning)}
+                onRevealVote={(jurorId, vote, salt, reasoning) => revealVote(dispute.id, jurorId, vote, salt, reasoning)}
+              />
+            </div>
           </div>
 
-          {/* ═══ Right: role, deadline, vote ═══ */}
+          {/* ═══ Column 3: Live Protocol Timers & Juror Status ═══ */}
           <div className="space-y-4">
+            {dispute.votingDeadline && (
+              <Card className="p-5 border-slate-200/80 shadow-sm bg-gradient-to-br from-white to-slate-50/50">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Voting Closes In</p>
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 shadow-xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Protocol Live
+                  </span>
+                </div>
+                <LiveCountdownDisplay target={dispute.votingDeadline} />
+                <p className="text-[10.5px] text-slate-400 mt-2.5 leading-relaxed">
+                  After the deadline expires, the cryptographic consensus verdict is automatically tallied and finalized on-chain.
+                </p>
+              </Card>
+            )}
+
+            {/* Juror Node Status */}
+            <Card className="p-4 border-slate-200">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Your Juror Node</span>
+                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+                  voted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                  myJuror?.status === 'COMMITTED' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                  'bg-slate-100 text-slate-600'
+                }`}>
+                  {voted ? 'REVEALED & VERIFIED' : myJuror?.status === 'COMMITTED' ? 'LOCKED COMMITMENT' : 'AWAITING VOTE'}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/70 space-y-1 text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Node ID:</span>
+                  <span className="font-mono font-bold text-slate-800">{myJurorPseudonym}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Staked:</span>
+                  <span className="font-bold text-slate-800">{myJuror?.stakedAmount?.toLocaleString() || '2,500'} RSLV</span>
+                </div>
+                {myJuror?.commitmentHash && (
+                  <div className="pt-1 border-t border-slate-200/60 flex justify-between items-center">
+                    <span className="text-slate-500">Hash:</span>
+                    <span className="font-mono text-[10px] text-violet-700 font-bold truncate max-w-[140px]" title={myJuror.commitmentHash}>
+                      {myJuror.commitmentHash.slice(0, 10)}...{myJuror.commitmentHash.slice(-6)}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => scrollToSection('voting-section')}
+                className="w-full mt-3 py-2 px-3 rounded-xl bg-violet-50 hover:bg-violet-100 text-violet-700 text-[11px] font-bold transition-all text-center cursor-pointer border border-violet-200/70"
+              >
+                {voted ? 'View Final Consensus' : 'Go To Voting Console ↓'}
+              </button>
+            </Card>
+
+            {/* Quorum Simulator Tool */}
+            <Card className="p-4 border-slate-200/80 bg-gradient-to-br from-white to-slate-50">
+              <div className="flex items-center gap-2 mb-2">
+                <Scale className="w-4 h-4 text-violet-600" />
+                <p className="text-[12px] font-black text-slate-900">Jury Quorum Fast-Sync</p>
+              </div>
+              <p className="text-[10.5px] text-slate-500 leading-relaxed mb-3">
+                Simulate peer commitments and reveals across other empanelled nodes to reach instant on-chain consensus.
+              </p>
+              <button
+                onClick={() => simulateOtherJurors(dispute.id)}
+                className="w-full py-2.5 px-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-bold transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+              >
+                <Scale className="w-3.5 h-3.5" />
+                Fast-Sync Jury Quorum &amp; Tally
+              </button>
+            </Card>
+
+            {/* Juror Guidelines */}
             <Card className="p-5">
               <div className="flex items-center gap-3 mb-3.5">
                 <div className="w-10 h-10 rounded-xl bg-violet-600 flex items-center justify-center">
@@ -380,67 +515,6 @@ export default function JurorWorkspace({ params }: { params: Promise<{ caseId: s
                 ))}
               </ul>
             </Card>
-
-            {countdown && (
-              <Card className="p-5">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center shrink-0">
-                    <Clock className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-bold text-slate-400">Voting Closes In</p>
-                    <p className={`text-[20px] font-black ${countdown.urgent ? 'text-rose-600' : 'text-slate-900'} leading-tight`}>{countdown.text}</p>
-                  </div>
-                </div>
-                <p className="text-[10.5px] text-slate-400 mt-2.5 leading-relaxed">
-                  After the deadline, the verdict will be finalized based on jury consensus.
-                </p>
-              </Card>
-            )}
-
-            <div>
-              <p className="text-[14px] font-black text-slate-900 mb-2.5">Cast Your Vote</p>
-              {voted ? (
-                <Card className="p-6 text-center">
-                  <CheckCircle2 className="w-9 h-9 text-emerald-600 mx-auto" />
-                  <p className="text-sm font-black text-emerald-800 mt-2.5">Vote locked &amp; verified</p>
-                  <p className="text-[11px] text-emerald-700 mt-1">Your salt matched your commitment. Your verdict is counted and immutable.</p>
-                  <button
-                    onClick={() => simulateOtherJurors(dispute.id)}
-                    className="w-full mt-4 p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold transition-all"
-                  >
-                    Demo: let the other jurors finish (commit + reveal)
-                  </button>
-                  <p className="text-[9px] text-slate-400 mt-1.5">In production every juror acts independently.</p>
-                </Card>
-              ) : (
-                <div className="space-y-3">
-                  <CommitRevealVoting
-                    jurors={dispute.jurors}
-                    currentJurorId={myJuror!.jurorId}
-                    votingDeadline={dispute.votingDeadline}
-                    onCommitVote={(jurorId, commitment, vote, salt) => commitVote(dispute.id, jurorId, commitment, vote, salt)}
-                    onRevealVote={(jurorId, vote, salt) => revealVote(dispute.id, jurorId, vote, salt)}
-                  />
-                  <button
-                    onClick={() => simulateOtherJurors(dispute.id)}
-                    className="w-full p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold transition-all"
-                    title="Prototype helper so the lifecycle can be completed"
-                  >
-                    Demo: simulate the other jurors (commit + reveal)
-                  </button>
-                  <p className="text-[9px] text-slate-400 text-center -mt-1">In production every juror acts independently on their own device.</p>
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 rounded-2xl bg-violet-50 border border-violet-100 flex items-start gap-2.5">
-              <ShieldCheck className="w-4 h-4 text-violet-600 shrink-0 mt-0.5" />
-              <p className="text-[10.5px] text-violet-900 leading-relaxed">
-                <strong>Your identity is protected.</strong> Parties and other jurors only ever see <span className="font-mono">{myJurorPseudonym}</span>.
-                Jury activity is recorded with zero-knowledge proofs; your name, email and wallet are never exposed.
-              </p>
-            </div>
           </div>
         </div>
       )}

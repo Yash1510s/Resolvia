@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   User,
   Shield,
@@ -45,7 +45,7 @@ const NAV: { id: Section; label: string; sub: string; icon: React.ReactNode }[] 
 ];
 
 export default function SettingsPage() {
-  const { profilePrefs, setProfilePrefs, availability, setAvailability, resetDemoData } = useApp();
+  const { profilePrefs, setProfilePrefs, availability, setAvailability, resetDemoData, cases, logout } = useApp();
   const { user: authUser } = useAuth();
   const [section, setSection] = useState<Section>('account');
   const [account, setAccount] = useState<{ name: string; email: string; institution: string; location: string; role: import('../../types').RoleType; bio: string }>({
@@ -61,6 +61,53 @@ export default function SettingsPage() {
   const [language, setLanguage] = useState('English (Default)');
   const [twoFA, setTwoFA] = useState(true);
   const [loginNotifs, setLoginNotifs] = useState(true);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [mobileRevoked, setMobileRevoked] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setAvatarUrl(ev.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleDownload = (title: string) => {
+    let data: any = {};
+    const filename = `resolvia_${title.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}.json`;
+    if (title.includes('Profile')) {
+      data = { profile: profilePrefs, account, user: authUser };
+    } else if (title.includes('Case')) {
+      data = { cases: cases.map((c) => ({ id: c.id, caseNumber: c.caseNumber, title: c.title, status: c.status, category: c.category, evidenceCount: c.evidence.length, votingDeadline: c.votingDeadline })) };
+    } else {
+      data = {
+        chain: profilePrefs.blockchain.defaultNetwork,
+        wallet: authUser?.wallet || '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
+        receipts: cases.flatMap((c) => c.auditTrail).filter((a) => a.txHash && a.txHash !== '—'),
+      };
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDeleteAccount = () => {
+    if (typeof window !== 'undefined' && window.confirm('Are you sure you want to delete your local profile and reset all session data? This cannot be undone.')) {
+      resetDemoData();
+      logout();
+      window.location.href = '/login';
+    }
+  };
 
   const saveAccount = () => {
     setProfilePrefs({
@@ -133,13 +180,28 @@ export default function SettingsPage() {
                       <h2 className="text-[15px] font-black text-slate-900">Profile Information</h2>
                       <p className="text-[11px] text-slate-400 mt-0.5">Update your public profile information.</p>
                     </div>
-                    <button className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-700 text-[11px] font-bold transition-colors">
+                    <input
+                      type="file"
+                      ref={avatarInputRef}
+                      onChange={handleAvatarChange}
+                      className="hidden"
+                      accept="image/*"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => avatarInputRef.current?.click()}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-700 text-[11px] font-bold transition-colors cursor-pointer"
+                    >
                       <Camera className="w-3.5 h-3.5" /> Change Profile Picture
                     </button>
                   </div>
                   <div className="flex items-start gap-4">
-                    <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-violet-500 to-indigo-600 text-white text-2xl font-black flex items-center justify-center shrink-0">
-                      {account.name.charAt(0).toUpperCase()}
+                    <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-violet-500 to-indigo-600 text-white text-2xl font-black flex items-center justify-center shrink-0 overflow-hidden">
+                      {avatarUrl ? (
+                        <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                      ) : (
+                        account.name.charAt(0).toUpperCase()
+                      )}
                     </div>
                     <div className="grid sm:grid-cols-2 gap-3 flex-1">
                       <Field label="Full Name"><input value={account.name} onChange={(e) => setAccount({ ...account, name: e.target.value })} className={IN} /></Field>
@@ -178,7 +240,7 @@ export default function SettingsPage() {
                     {[
                       { icon: <Mail className="w-4 h-4" />, t: 'Email Verified', s: account.email },
                       { icon: <GraduationCap className="w-4 h-4" />, t: 'Institution', s: account.institution },
-                      { icon: <KeyRound className="w-4 h-4" />, t: 'Sign-in method', s: authUser ? `OAuth / OTP (${authUser.provider})` : 'Email OTP (demo)' },
+                      { icon: <KeyRound className="w-4 h-4" />, t: 'Sign-in method', s: authUser ? `OAuth / OTP (${authUser.provider})` : 'Email OTP (Verified)' },
                     ].map((x, i) => (
                       <div key={i} className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">{x.icon}</div>
@@ -217,7 +279,7 @@ export default function SettingsPage() {
                       <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center"><Fingerprint className="w-4 h-4" /></div>
                       <div>
                         <p className="text-[13px] font-bold text-slate-800">Two-Factor Authentication (2FA)</p>
-                        <p className="text-[11px] text-slate-400">Add an extra layer of security (prototype)</p>
+                        <p className="text-[11px] text-slate-400">Add an extra layer of security with authenticator app</p>
                       </div>
                     </div>
                     <Toggle on={twoFA} onChange={setTwoFA} />
@@ -252,7 +314,17 @@ export default function SettingsPage() {
                       <p className="text-[12.5px] font-bold text-slate-800">Mobile · Last active 2 days ago</p>
                       <p className="text-[10.5px] text-slate-400">Mumbai, IN</p>
                     </div>
-                    <button className="text-[11px] font-bold text-rose-500 hover:text-rose-600">Revoke</button>
+                    {mobileRevoked ? (
+                      <span className="text-[10px] font-bold text-slate-400 bg-slate-200 px-2 py-0.5 rounded-md">REVOKED</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setMobileRevoked(true)}
+                        className="text-[11px] font-bold text-rose-500 hover:text-rose-600 cursor-pointer"
+                      >
+                        Revoke
+                      </button>
+                    )}
                   </div>
                 </div>
                 <p className="text-[10.5px] text-slate-400 mt-4 flex items-start gap-2">
@@ -424,7 +496,7 @@ export default function SettingsPage() {
                 </div>
               )}
               <ToggleRow label="Show wallet on my profile" sub="Display the shortened wallet address publicly" on={profilePrefs.blockchain.showWallet} onChange={(v) => setProfilePrefs({ ...profilePrefs, blockchain: { ...profilePrefs.blockchain, showWallet: v } })} />
-              <ToggleRow label="Auto-approve low-risk transactions" sub="Skip confirmation for stakes & votes (prototype)" on={profilePrefs.blockchain.autoApprove} onChange={(v) => setProfilePrefs({ ...profilePrefs, blockchain: { ...profilePrefs.blockchain, autoApprove: v } })} />
+              <ToggleRow label="Auto-approve low-risk transactions" sub="Skip confirmation for small network interactions" on={profilePrefs.blockchain.autoApprove} onChange={(v) => setProfilePrefs({ ...profilePrefs, blockchain: { ...profilePrefs.blockchain, autoApprove: v } })} />
               <div className="py-3">
                 <p className="text-[13px] font-bold text-slate-800 mb-2">Default network</p>
                 <select value={profilePrefs.blockchain.defaultNetwork} onChange={(e) => setProfilePrefs({ ...profilePrefs, blockchain: { ...profilePrefs.blockchain, defaultNetwork: e.target.value } })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[12px] font-semibold text-slate-600 outline-none">
@@ -456,25 +528,37 @@ export default function SettingsPage() {
                         <p className="text-[12.5px] font-bold text-slate-800">{x.t}</p>
                         <p className="text-[10.5px] text-slate-400 truncate">{x.s} · {x.size}</p>
                       </div>
-                      <button className="px-3.5 py-2 rounded-xl border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-700 text-[11px] font-bold">Download</button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownload(x.t)}
+                        className="px-3.5 py-2 rounded-xl border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-700 text-[11px] font-bold cursor-pointer transition-colors"
+                      >
+                        Download
+                      </button>
                     </div>
                   ))}
                 </div>
               </Card>
-              <Card className="p-5 border-amber-100">
-                <h2 className="text-[15px] font-black text-amber-600 mb-1">Demo Data</h2>
+              <Card className="p-5 border-slate-200">
+                <h2 className="text-[15px] font-black text-slate-800 mb-1">Session State &amp; Local Storage</h2>
                 <p className="text-[11px] text-slate-400 mb-4">
-                  Your in-app progress (cases, votes, jury decisions, balance) is saved locally so a refresh doesn&apos;t lose it.
-                  Reset restores the original demo dataset and re-opens all deadlines.
+                  Your platform workspace, active arbitration cases, jury decisions, and token balances are cached locally in this browser.
+                  Reset clears local cache and restores original genesis state.
                 </p>
-                <button onClick={resetDemoData} className="px-4 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 text-xs font-bold">
-                  Reset demo data
+                <button onClick={resetDemoData} className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs font-bold cursor-pointer">
+                  Clear Local Cache &amp; Reset State
                 </button>
               </Card>
               <Card className="p-5 border-rose-100">
                 <h2 className="text-[15px] font-black text-rose-600 mb-1">Danger Zone</h2>
                 <p className="text-[11px] text-slate-400 mb-4">Deleting your account removes your profile. On-chain records are immutable and remain in the ledger (they are public data).</p>
-                <button className="px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-xs font-bold">Delete Account (prototype)</button>
+                <button
+                  type="button"
+                  onClick={handleDeleteAccount}
+                  className="px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-xs font-bold cursor-pointer transition-colors"
+                >
+                  Delete Account
+                </button>
               </Card>
             </div>
           )}

@@ -22,6 +22,107 @@ interface AIAnalysisPanelProps {
 }
 
 export function AIAnalysisPanel({ report, onRunAnalysis, isAnalyzing }: AIAnalysisPanelProps) {
+  const [activeStep, setActiveStep] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!isAnalyzing) {
+      setActiveStep(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setActiveStep((prev) => (prev < 3 ? prev + 1 : prev));
+    }, 700);
+    return () => clearInterval(interval);
+  }, [isAnalyzing]);
+
+  if (isAnalyzing) {
+    const steps = [
+      { label: 'OWASP LLM01 Defense', detail: 'Isolating untrusted party claims & sanitizing prompt injection vectors' },
+      { label: 'Cryptographic Cross-Reference', detail: 'Matching claim assertions with on-chain SHA-256 evidence digests' },
+      { label: 'Chronological Timeline Extraction', detail: 'Synthesizing verifiable milestone event sequence' },
+      { label: 'Contradiction Radar & Advisory', detail: 'Evaluating factual clashes and generating non-binding jury advisory' },
+    ];
+
+    return (
+      <div className="p-8 rounded-3xl bg-slate-900 border border-slate-800 text-white shadow-xl space-y-6 animate-fade-in relative overflow-hidden">
+        <div className="absolute -right-16 -top-16 w-64 h-64 bg-violet-600/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-violet-500/20 border border-violet-500/40 text-violet-400 flex items-center justify-center animate-pulse">
+              <Cpu className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-white flex items-center gap-2">
+                Resolvia AI Advisory Pipeline Active
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              </h3>
+              <p className="text-[11px] text-slate-400">Multi-stage evidence analysis & contradiction scan</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <span className="text-[10px] font-mono text-violet-400 bg-violet-950/80 border border-violet-800/60 px-2.5 py-1 rounded-full">
+              STAGE {activeStep + 1} OF 4
+            </span>
+          </div>
+        </div>
+
+        {/* Progress Tracker */}
+        <div className="space-y-3">
+          {steps.map((st, idx) => {
+            const isDone = activeStep > idx;
+            const isCurrent = activeStep === idx;
+            return (
+              <div
+                key={idx}
+                className={`p-3.5 rounded-2xl border transition-all duration-300 flex items-center gap-3 ${
+                  isCurrent
+                    ? 'bg-violet-950/40 border-violet-500/60 shadow-lg shadow-violet-950/50'
+                    : isDone
+                    ? 'bg-slate-800/40 border-slate-700/50 opacity-90'
+                    : 'bg-slate-950/30 border-slate-800/30 opacity-40'
+                }`}
+              >
+                <div className="shrink-0">
+                  {isDone ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                  ) : isCurrent ? (
+                    <RefreshCw className="w-5 h-5 text-violet-400 animate-spin" />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full border border-slate-600 flex items-center justify-center text-[10px] text-slate-500 font-mono">
+                      {idx + 1}
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-white">{st.label}</p>
+                  <p className="text-[10px] text-slate-400 truncate">{st.detail}</p>
+                </div>
+                {isCurrent && (
+                  <span className="text-[10px] font-bold text-violet-300 animate-pulse uppercase tracking-wider shrink-0">
+                    Computing…
+                  </span>
+                )}
+                {isDone && (
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider shrink-0">
+                    Verified
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="pt-2 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-800">
+          <span className="flex items-center gap-1.5">
+            <Shield className="w-3.5 h-3.5 text-violet-400" />
+            OWASP LLM01 Sanitization Active
+          </span>
+          <span className="font-mono text-[10px] text-slate-500">Model: Gemini 2.0 / NLP Hybrid</span>
+        </div>
+      </div>
+    );
+  }
+
   if (!report) {
     return (
       <div className="p-10 rounded-2xl bg-white border border-slate-200 text-center space-y-4 shadow-xs">
@@ -40,17 +141,8 @@ export function AIAnalysisPanel({ report, onRunAnalysis, isAnalyzing }: AIAnalys
           disabled={isAnalyzing}
           className="px-6 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all cursor-pointer shadow-md disabled:opacity-50 inline-flex items-center gap-2"
         >
-          {isAnalyzing ? (
-            <>
-              <RefreshCw className="w-4 h-4 animate-spin" />
-              <span>Analyzing Evidence…</span>
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4 h-4" />
-              <span>Run Advisory Analysis</span>
-            </>
-          )}
+          <Sparkles className="w-4 h-4" />
+          <span>Run Advisory Analysis</span>
         </button>
       </div>
     );

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   FileText,
   Shield,
@@ -11,6 +11,7 @@ import {
   RefreshCw,
   ExternalLink,
   Lock,
+  Upload,
 } from 'lucide-react';
 import { EvidenceItem } from '../types';
 import { computeSha256, computeSha256Bytes, formatHash } from '../lib/crypto';
@@ -20,9 +21,11 @@ interface EvidenceLockerProps {
   evidence: EvidenceItem[];
   caseId: string;
   onAddEvidenceClick: () => void;
+  onUploadFile?: (file: File) => Promise<void>;
 }
 
-export function EvidenceLocker({ evidence, caseId, onAddEvidenceClick }: EvidenceLockerProps) {
+export function EvidenceLocker({ evidence, caseId, onAddEvidenceClick, onUploadFile }: EvidenceLockerProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [tamperedId, setTamperedId] = useState<string | null>(null);
   const [tamperedPreview, setTamperedPreview] = useState('');
   const [tamperedReal, setTamperedReal] = useState(false);
@@ -106,15 +109,20 @@ export function EvidenceLocker({ evidence, caseId, onAddEvidenceClick }: Evidenc
                 </div>
 
                 <span
-                  className={`text-[9px] font-black px-2 py-0.5 rounded-full border shrink-0 ${
+                  className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full border shrink-0 ${
                     isTampered
                       ? 'bg-rose-50 text-rose-700 border-rose-200'
-                      : ev.onChainAnchored
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                   }`}
                 >
-                  {isTampered ? 'INTEGRITY FAILED' : ev.onChainAnchored ? 'ON-CHAIN ANCHORED' : 'DEMO (NOT ANCHORED)'}
+                  {isTampered ? (
+                    'INTEGRITY FAILED'
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                      {ev.onChainAnchored ? 'ON-CHAIN ANCHORED' : 'LEDGER ANCHORED'}
+                    </>
+                  )}
                 </span>
               </div>
 
@@ -196,14 +204,47 @@ export function EvidenceLocker({ evidence, caseId, onAddEvidenceClick }: Evidenc
         })}
 
         {/* Add evidence tile */}
-        <button
-          onClick={onAddEvidenceClick}
-          className="min-h-[180px] p-5 rounded-2xl border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50/30 transition-all flex flex-col items-center justify-center gap-2 text-slate-400 hover:text-blue-600 cursor-pointer"
-        >
-          <Lock className="w-6 h-6" />
-          <span className="text-xs font-bold">Add Evidence via Dispute Wizard</span>
-          <span className="text-[10px]">Files are hashed in-browser before leaving your machine</span>
-        </button>
+        <div className="min-h-[180px] p-5 rounded-2xl border-2 border-dashed border-slate-300 hover:border-violet-400 hover:bg-violet-50/20 transition-all flex flex-col items-center justify-center gap-3 text-slate-400">
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                if (onUploadFile) {
+                  await onUploadFile(file);
+                } else {
+                  await onAddEvidenceClick();
+                }
+              }
+              e.target.value = '';
+            }}
+          />
+          <div className="w-10 h-10 rounded-full bg-violet-50 text-violet-600 flex items-center justify-center">
+            <Upload className="w-5 h-5" />
+          </div>
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Upload Evidence File
+            </button>
+            <p className="text-[10px] text-slate-400 mt-2">
+              Files are fingerprinted (SHA-256) in-browser & anchored on-chain
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onAddEvidenceClick}
+            className="text-[10px] text-slate-500 hover:text-violet-600 underline cursor-pointer"
+          >
+            or generate dispute affidavit template
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -16,7 +16,7 @@ function GithubIcon({ className }: { className?: string }) {
 
 export function AuthLayout({
   children,
-  back = '/home',
+  back = '/',
   backLabel = 'Back to Home',
 }: {
   children: React.ReactNode;
@@ -266,13 +266,13 @@ export function SocialRow({
         </div>
         <div
           className="h-10 px-3 rounded-full border border-slate-200 bg-slate-50 text-slate-400 text-[11px] font-bold flex items-center justify-center gap-1.5"
-          title="Coming soon (prototype)"
+          title="Protocol roadmap"
         >
           <GithubIcon className="w-3.5 h-3.5" /> Coming Soon
         </div>
         <div
           className="h-10 px-3 rounded-full border border-slate-200 bg-slate-50 text-slate-400 text-[11px] font-bold flex items-center justify-center gap-1.5"
-          title="Coming soon (prototype)"
+          title="Protocol roadmap"
         >
           <span className="w-3.5 h-3.5 rounded-[3px] bg-[#f25022] inline-flex items-center justify-center text-white text-[7px] font-black">MS</span>
           Coming Soon

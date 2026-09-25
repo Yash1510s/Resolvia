@@ -124,6 +124,7 @@ export interface JurorAssignment {
   status: 'PENDING_COMMIT' | 'COMMITTED' | 'REVEALED';
   commitmentHash?: string;
   revealedVote?: VoteChoice;
+  reasoning?: string;
   salt?: string;
   commitTimestamp?: string;
   revealTimestamp?: string;

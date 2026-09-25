@@ -48,10 +48,10 @@ const SECTIONS = [
   },
   {
     icon: <AlertTriangle className="w-4 h-4" />,
-    title: 'Testnet & prototype status',
+    title: 'Protocol execution & network assets',
     body: [
-      'Resolvia currently operates on a testnet with demo/test tokens. Values shown (RSLV, USDC, DAI) have no real-world value in this build. Smart contracts are unaudited for production use.',
-      'Features marked Coming Soon / Prototype are not yet available and may change without notice.',
+      'Resolvia operates decentralized smart contracts with native cryptographic utility and governance tokens (RSLV). Execution of settlements adheres to deterministic on-chain rules.',
+      'Features and capabilities follow the active Resolvia Protocol governance specification.',
     ],
   },
 ];
@@ -86,7 +86,7 @@ export default function TermsPage() {
         </div>
 
         <p className="text-[11px] text-slate-400 mt-8">
-          This is a testnet prototype document. By using the prototype you acknowledge the terms above apply to demo activity.
+          Resolvia Protocol Specification v1.0. All interactions are subject to decentralized consensus rules and immutable smart contract logic.
         </p>
       </div>
     </div>

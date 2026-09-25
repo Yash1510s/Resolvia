@@ -35,12 +35,14 @@ type Tab = 'ALL' | 'NOTIFICATIONS' | 'DISCUSSIONS';
 type CasePaneTab = 'discussion' | 'summary' | 'evidence' | 'verdict' | 'takeaways';
 
 export default function MessagesPage() {
-  const { cases, notifications, addDiscussionPost, identity } = useApp();
+  const { cases, notifications, addDiscussionPost, likeDiscussionPost, reportDiscussionPost, identity } = useApp();
   const [tab, setTab] = useState<Tab>('ALL');
   const [q, setQ] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null); // case id, or `n:<id>` for notification
   const [paneTab, setPaneTab] = useState<CasePaneTab>('discussion');
   const [comment, setComment] = useState('');
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const discussionCases = useMemo(() => cases.filter((c) => isClosed(c) && (c.discussion || []).length > 0), [cases]);
   const allNotifications = notifications;
@@ -110,12 +112,51 @@ export default function MessagesPage() {
                 View Case Details
               </Link>
             )}
-            <button className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-bold transition-colors inline-flex items-center gap-1.5">
-              <Share2 className="w-3.5 h-3.5" /> Share
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  const url = selectedCase ? `${window.location.origin}/cases/${selectedCase.id}` : window.location.href;
+                  navigator.clipboard.writeText(url);
+                  setCopiedLink(true);
+                  setTimeout(() => setCopiedLink(false), 2000);
+                }
+              }}
+              className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Share2 className="w-3.5 h-3.5" /> {copiedLink ? 'Copied Link!' : 'Share'}
             </button>
-            <button className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-400">
-              <MoreVertical className="w-4 h-4" />
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMoreOpen(!moreOpen)}
+                className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-400 cursor-pointer"
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+              {moreOpen && (
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-200 py-1.5 z-20 text-xs font-bold">
+                  {selectedCase && (
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectedCase.caseNumber);
+                        setMoreOpen(false);
+                      }}
+                      className="w-full text-left px-3.5 py-2 hover:bg-slate-50 text-slate-700"
+                    >
+                      Copy Case Number
+                    </button>
+                  )}
+                  <Link
+                    href="/proof-verifier"
+                    onClick={() => setMoreOpen(false)}
+                    className="block w-full text-left px-3.5 py-2 hover:bg-slate-50 text-slate-700"
+                  >
+                    Go to Proof Verifier
+                  </Link>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -288,11 +329,34 @@ export default function MessagesPage() {
                   </div>
                   <div className="flex items-center justify-between pl-12 pb-4">
                     <div className="flex items-center gap-3 text-[11px] font-bold text-slate-400">
-                      <button className="flex items-center gap-1 hover:text-slate-600"><ImageIcon className="w-3.5 h-3.5" /> Add Image</button>
-                      <button className="flex items-center gap-1 hover:text-slate-600"><Link2 className="w-3.5 h-3.5" /> Link</button>
-                      <button className="flex items-center gap-1 hover:text-slate-600"><Type className="w-3.5 h-3.5" /> Format</button>
+                      <button
+                        type="button"
+                        onClick={() => setComment((prev) => prev + ' ![Exhibit](https://) ')}
+                        className="flex items-center gap-1 hover:text-slate-600 cursor-pointer"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5" /> Add Image
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setComment((prev) => prev + ' [Reference](https://) ')}
+                        className="flex items-center gap-1 hover:text-slate-600 cursor-pointer"
+                      >
+                        <Link2 className="w-3.5 h-3.5" /> Link
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setComment((prev) => prev + ' **Important Notice** ')}
+                        className="flex items-center gap-1 hover:text-slate-600 cursor-pointer"
+                      >
+                        <Type className="w-3.5 h-3.5" /> Format
+                      </button>
                     </div>
-                    <button onClick={post} disabled={!comment.trim()} className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white text-[11px] font-bold transition-colors">
+                    <button
+                      type="button"
+                      onClick={post}
+                      disabled={!comment.trim()}
+                      className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white text-[11px] font-bold transition-colors cursor-pointer"
+                    >
                       Post Comment
                     </button>
                   </div>
@@ -313,9 +377,27 @@ export default function MessagesPage() {
                           </p>
                           <p className="text-[12px] text-slate-600 mt-1 leading-relaxed">{p.body}</p>
                           <div className="flex items-center gap-4 mt-2 text-[10.5px] font-bold text-slate-400">
-                            <button className="flex items-center gap-1 hover:text-violet-600"><ThumbsUp className="w-3 h-3" /> {p.likes}</button>
-                            <button className="flex items-center gap-1 hover:text-rose-500"><ThumbsDown className="w-3 h-3" /> {p.reports}</button>
-                            <button className="flex items-center gap-1 hover:text-slate-600"><Reply className="w-3 h-3" /> Reply</button>
+                            <button
+                              type="button"
+                              onClick={() => likeDiscussionPost(selectedCase.id, p.id)}
+                              className="flex items-center gap-1 hover:text-violet-600 cursor-pointer"
+                            >
+                              <ThumbsUp className="w-3 h-3" /> {p.likes}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => reportDiscussionPost(selectedCase.id, p.id)}
+                              className="flex items-center gap-1 hover:text-rose-500 cursor-pointer"
+                            >
+                              <ThumbsDown className="w-3 h-3" /> {p.reports}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setComment((prev) => `@${p.author} ` + prev)}
+                              className="flex items-center gap-1 hover:text-slate-600 cursor-pointer"
+                            >
+                              <Reply className="w-3 h-3" /> Reply
+                            </button>
                           </div>
                         </div>
                       </div>

@@ -10,7 +10,7 @@ interface Props {
 }
 
 export function CommunityDiscussion({ dispute }: Props) {
-  const { identity, addDiscussionPost, myJurorPseudonym } = useApp();
+  const { identity, addDiscussionPost, likeDiscussionPost, reportDiscussionPost, myJurorPseudonym } = useApp();
   const [body, setBody] = useState('');
 
   if (dispute.status !== 'CLOSED') {
@@ -94,7 +94,12 @@ export function CommunityDiscussion({ dispute }: Props) {
       ) : (
         <div className="space-y-3">
           {posts.map((p) => (
-            <PostCard key={p.id} post={p} />
+            <PostCard
+              key={p.id}
+              post={p}
+              onLike={() => likeDiscussionPost(dispute.id, p.id)}
+              onReport={() => reportDiscussionPost(dispute.id, p.id)}
+            />
           ))}
         </div>
       )}
@@ -102,7 +107,15 @@ export function CommunityDiscussion({ dispute }: Props) {
   );
 }
 
-function PostCard({ post }: { post: CommunityPost }) {
+function PostCard({
+  post,
+  onLike,
+  onReport,
+}: {
+  post: CommunityPost;
+  onLike?: () => void;
+  onReport?: () => void;
+}) {
   const isJuror = post.authorRole === 'Juror (anonymous)';
   return (
     <div className="p-4 rounded-2xl bg-white border border-slate-200">
@@ -128,12 +141,20 @@ function PostCard({ post }: { post: CommunityPost }) {
           </div>
         </div>
         <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400">
-          <span className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onLike}
+            className="flex items-center gap-1 hover:text-violet-600 transition-colors cursor-pointer"
+          >
             <ThumbsUp className="w-3.5 h-3.5" /> {post.likes}
-          </span>
-          <span className="flex items-center gap-1">
+          </button>
+          <button
+            type="button"
+            onClick={onReport}
+            className="flex items-center gap-1 hover:text-rose-500 transition-colors cursor-pointer"
+          >
             <Flag className="w-3.5 h-3.5" /> {post.reports}
-          </span>
+          </button>
         </div>
       </div>
       <p className="text-xs text-slate-700 leading-relaxed mt-3">{post.body}</p>

@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: resolvia-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=dev
+      - ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+      - RESOLVIA_RPC=http://blockchain:8545
+      - RESOLVIA_CHAIN_ID=31337
+    volumes:
+      - ./backend/resolvia_auth.db:/app/backend/resolvia_auth.db
+      - ./backend/state.db:/app/backend/state.db
+      - ./backend/secret:/app/backend/secret
+      - ./blockchain/deployments:/app/blockchain/deployments
+    restart: unless-stopped
+
+  frontend:
+    image: node:22-alpine
+    container_name: resolvia-frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_RPC_URL=http://localhost:8545
+    command: sh -c "npm install && npm run dev"
+    depends_on:
+      - backend
+    restart: unless-stopped

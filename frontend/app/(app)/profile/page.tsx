@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import Link from 'next/link';
 import {
   BadgeCheck,
@@ -41,6 +41,34 @@ export default function ProfilePage() {
   const [tab, setTab] = useState<Tab>('overview');
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(profilePrefs);
+  const [avatarImg, setAvatarImg] = useState<string | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  const coverThemes = [
+    'from-[#101a33] via-[#1c2447] to-[#4a3a7c]',
+    'from-[#0b3c49] via-[#145266] to-[#3a7d8c]',
+    'from-[#3b1238] via-[#521c4e] to-[#75326d]',
+    'from-[#1a2e1d] via-[#244229] to-[#3f6b47]',
+  ];
+  const [coverGradient, setCoverGradient] = useState(coverThemes[0]);
+
+  const cycleCover = () => {
+    setCoverGradient((prev) => {
+      const idx = coverThemes.indexOf(prev);
+      return coverThemes[(idx + 1) % coverThemes.length];
+    });
+  };
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setAvatarImg(ev.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const displayName = authUser ? authUser.name : profilePrefs.email.split('@')[0] || 'Community Member';
   const myCases = cases.filter((c) => c.myRole);
@@ -89,13 +117,17 @@ export default function ProfilePage() {
         <div className="min-w-0 space-y-4">
           {/* Cover */}
           <div className="relative h-40 rounded-2xl overflow-hidden bg-[#101a33]">
-            <div className="absolute inset-0 bg-gradient-to-r from-[#101a33] via-[#1c2447] to-[#4a3a7c]" />
+            <div className={`absolute inset-0 bg-gradient-to-r ${coverGradient} transition-all duration-500`} />
             <div className="absolute -left-10 -top-10 w-48 h-48 rounded-full bg-violet-500/20 blur-3xl" />
             <div className="absolute right-0 bottom-0 left-0 h-16 bg-gradient-to-t from-[#0d1526]/80 to-transparent" />
             <div className="absolute right-5 top-4 flex flex-col items-end">
               <p className="italic text-[13px] text-slate-200 text-right max-w-xs leading-relaxed hidden sm:block">"Better communities are built by fairer people."</p>
               <p className="text-[10px] text-slate-400 mt-1 hidden sm:block">— Resolvia</p>
-              <button className="mt-2.5 flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-black/40 backdrop-blur border border-white/10 text-white text-[11px] font-bold hover:bg-black/60 transition-colors">
+              <button
+                type="button"
+                onClick={cycleCover}
+                className="mt-2.5 flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-black/40 backdrop-blur border border-white/10 text-white text-[11px] font-bold hover:bg-black/60 transition-colors cursor-pointer"
+              >
                 <Camera className="w-3.5 h-3.5" /> Edit Cover
               </button>
             </div>
@@ -105,10 +137,26 @@ export default function ProfilePage() {
           <Card className="p-5 -mt-10 relative mx-4 sm:mx-6">
             <div className="flex flex-wrap items-end gap-4">
               <div className="relative -mt-14">
-                <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-violet-500 to-indigo-600 border-4 border-white flex items-center justify-center text-white text-3xl font-black shadow-lg">
-                  {displayName.charAt(0).toUpperCase()}
+                <input
+                  type="file"
+                  ref={avatarInputRef}
+                  onChange={handleAvatarChange}
+                  className="hidden"
+                  accept="image/*"
+                />
+                <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-violet-500 to-indigo-600 border-4 border-white flex items-center justify-center text-white text-3xl font-black shadow-lg overflow-hidden">
+                  {avatarImg ? (
+                    <img src={avatarImg} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    displayName.charAt(0).toUpperCase()
+                  )}
                 </div>
-                <button className="absolute bottom-0.5 right-0.5 w-7 h-7 rounded-full bg-slate-700 text-white flex items-center justify-center border-2 border-white" title="Change photo (prototype)">
+                <button
+                  type="button"
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="absolute bottom-0.5 right-0.5 w-7 h-7 rounded-full bg-slate-700 hover:bg-slate-900 text-white flex items-center justify-center border-2 border-white transition-colors cursor-pointer"
+                  title="Change photo"
+                >
                   <Camera className="w-3.5 h-3.5" />
                 </button>
               </div>

@@ -17,6 +17,7 @@ import {
   Lock,
   Zap,
   ArrowRight,
+  Play,
 } from 'lucide-react';
 import { UserRole } from '../types';
 
@@ -24,7 +25,7 @@ interface LandingPageProps {
   onGetStarted: () => void;
   onOpenDashboard: () => void;
   onOpenWizard: () => void;
-  onSignInRole: (role: UserRole) => void;
+  onSignInRole?: (role: UserRole) => void;
   onWatchDemo: () => void;
   isLoggedIn: boolean;
   onLogout: () => void;
@@ -141,9 +142,10 @@ export function LandingPage({
               </button>
               <button
                 onClick={onWatchDemo}
-                className="px-7 py-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-sm font-bold transition-all cursor-pointer"
+                className="px-7 py-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-sm font-bold transition-all cursor-pointer flex items-center gap-2"
               >
-                Watch Demo
+                <Play className="w-4 h-4 text-violet-400 fill-violet-400" />
+                <span>Watch Demo</span>
               </button>
             </div>
 
@@ -151,7 +153,7 @@ export function LandingPage({
               {[
                 { v: '100+', l: 'Disputes Resolved' },
                 { v: '4.8/5', l: 'User Trust Rating' },
-                { v: '15', l: 'Case Categories' },
+                { v: '10+', l: 'Categories' },
                 { v: '50+', l: 'Active Community' },
               ].map((s) => (
                 <div key={s.l} className="p-3 rounded-xl bg-white/[0.04] border border-white/10">
@@ -185,91 +187,57 @@ export function LandingPage({
             </div>
           </div>
 
-          {/* Right: Mock Case Card Stack */}
+          {/* Right: Lady Justice Hero Visual (matching reference design) */}
           <div className="lg:col-span-6">
-            <div className="relative max-w-md mx-auto lg:ml-auto">
-              {/* Glow behind card */}
-              <div className="absolute -inset-4 bg-gradient-to-tr from-blue-600/20 to-purple-600/20 rounded-3xl blur-2xl"></div>
+            <div className="relative max-w-lg mx-auto lg:ml-auto">
+              {/* Radial glow backdrop */}
+              <div className="absolute -inset-4 bg-gradient-to-tr from-violet-600/30 via-indigo-600/20 to-blue-500/20 rounded-3xl blur-3xl pointer-events-none" />
 
-              {/* Main mock case card */}
-              <div className="relative bg-[#0e1630] border border-white/10 rounded-2xl p-5 shadow-2xl space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[11px] font-bold text-blue-400 bg-blue-500/10 border border-blue-400/20 px-2 py-0.5 rounded">
-                      RSV-2026-084
-                    </span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-400/20">
-                      JURY_REVEAL
+              {/* Main Visual Frame */}
+              <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#0d152b]/90 backdrop-blur-md shadow-2xl shadow-violet-950/60 group">
+                <div className="relative aspect-[4/3] sm:aspect-[16/11] w-full overflow-hidden">
+                  <img
+                    src="/hero_lady_justice.jpg"
+                    alt="Lady Justice - Resolvia Decentralized Arbitration"
+                    className="w-full h-full object-cover object-center transform group-hover:scale-105 transition-transform duration-700"
+                  />
+                  {/* Atmospheric blend gradients */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0b132b] via-transparent to-transparent opacity-80" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-[#0b132b]/40 via-transparent to-[#0b132b]/30" />
+
+                  {/* Corner Badge: Justice Powered by Technology */}
+                  <div className="absolute bottom-4 right-4 text-right">
+                    <span className="inline-block text-[10px] font-black uppercase tracking-widest text-violet-200 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-lg border border-violet-500/30 shadow-lg">
+                      Justice Powered by Technology
                     </span>
                   </div>
-                  <span className="text-[10px] text-slate-500">Sepolia • Block 6,284,190</span>
                 </div>
 
-                <div>
-                  <h3 className="text-sm font-bold text-white">
-                    Smart Contract Delivery Dispute — Sepolia Staging
-                  </h3>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Alice Vance (Claimant) vs Apex Blockchain Labs (Respondent)
-                  </p>
+                {/* Floating pill: On-Chain Commitment */}
+                <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-md border border-white/10 rounded-xl px-3.5 py-2 shadow-xl flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-[11px] font-bold text-white">
+                    Commitment <span className="font-mono text-violet-300">0x8f3a…c91d</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 border-l border-white/15 pl-2">Sepolia</span>
                 </div>
 
-                {/* Evidence mini rows */}
-                <div className="space-y-2">
-                  {[
-                    { name: 'deliverable_reentrancy.patch', cid: 'QmX4b...f92a', status: 'VERIFIED' },
-                    { name: 'telegram_dispute_log.txt', cid: 'Qm7cD...11be', status: 'VERIFIED' },
-                    { name: 'staging_reentrancy_trace.log', cid: 'QmW3d...904c', status: 'FLAGGED' },
-                  ].map((ev) => (
-                    <div key={ev.name} className="flex items-center justify-between bg-white/[0.03] border border-white/5 rounded-xl px-3 py-2.5">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileText className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-semibold text-slate-300 truncate">{ev.name}</p>
-                          <p className="text-[10px] text-slate-600 font-mono truncate">CID {ev.cid}</p>
-                        </div>
-                      </div>
-                      <span
-                        className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
-                          ev.status === 'VERIFIED'
-                            ? 'bg-emerald-500/10 text-emerald-400'
-                            : 'bg-amber-500/10 text-amber-400'
-                        }`}
-                      >
-                        {ev.status}
-                      </span>
-                    </div>
-                  ))}
+                {/* Floating pill: 100% On-Chain Verifiable */}
+                <div className="absolute top-4 right-4 bg-black/70 backdrop-blur-md border border-white/10 rounded-xl px-3 py-2 shadow-xl flex items-center gap-2">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-[10.5px] font-bold text-white">100% On-Chain</span>
                 </div>
 
-                {/* Jury tally */}
-                <div className="flex items-center justify-between pt-2 border-t border-white/5">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Jury Tally</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[11px] font-bold text-emerald-400">3 Claimant</span>
-                    <span className="text-slate-600 text-[10px]">|</span>
-                    <span className="text-[11px] font-bold text-rose-400">2 Respondent</span>
+                {/* Floating pill: AI Advisory */}
+                <div className="absolute bottom-4 left-4 bg-[#0e1630]/90 backdrop-blur-md border border-white/15 rounded-xl px-3.5 py-2 shadow-xl flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+                    <Cpu className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <p className="text-[10.5px] font-bold text-white">AI Advisory: Non-binding</p>
+                    <p className="text-[9px] text-slate-400">Jury renders sole binding verdict</p>
                   </div>
                 </div>
-              </div>
-
-              {/* Floating chip: AI advisory */}
-              <div className="absolute -bottom-5 -left-6 bg-[#111a38] border border-white/10 rounded-xl px-4 py-3 shadow-xl flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
-                  <Cpu className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-white">AI Advisory: Claimant favoured</p>
-                  <p className="text-[9px] text-slate-500">Confidence 82% • Non-binding</p>
-                </div>
-              </div>
-
-              {/* Floating chip: on-chain */}
-              <div className="absolute -top-4 -right-4 bg-[#111a38] border border-white/10 rounded-xl px-4 py-3 shadow-xl flex items-center gap-2.5">
-                <CheckCircle className="w-4 h-4 text-blue-400" />
-                <p className="text-[10px] font-bold text-white">
-                  Commitment <span className="font-mono text-blue-400">0x8f3a…c91d</span>
-                </p>
               </div>
             </div>
           </div>
@@ -335,32 +303,50 @@ export function LandingPage({
 
       {/* ═══════ CTA BAND ═══════ */}
       <section className="px-4 sm:px-6 lg:px-12 py-16 border-t border-white/5">
-        <div className="max-w-4xl mx-auto p-8 sm:p-10 rounded-3xl bg-gradient-to-tr from-blue-600/20 to-purple-600/20 border border-white/10 text-center space-y-4">
-          <h2 className="text-2xl font-black text-white">Experience the full lifecycle</h2>
-          <p className="text-sm text-slate-400 max-w-lg mx-auto">
-            Switch between Claimant, Respondent, Juror, and Admin personas in one click.
-            File a case, watch it get hashed, vote blindly, and export the legal dossier.
+        <div className="max-w-4xl mx-auto p-8 sm:p-10 rounded-3xl bg-gradient-to-tr from-violet-600/20 to-indigo-600/20 border border-white/10 text-center space-y-4">
+          <h2 className="text-2xl sm:text-3xl font-black text-white">Ready for Fair, Tamper-Evident Resolution?</h2>
+          <p className="text-sm text-slate-300 max-w-xl mx-auto">
+            Whether you need to file an enforceable claim, submit verifiable counter-evidence, or serve on an independent jury panel — Resolvia gives you transparent, cryptographic dispute resolution.
           </p>
           <div className="flex flex-wrap justify-center gap-3 pt-2">
-            <button
-              onClick={isLoggedIn ? onOpenDashboard : () => onSignInRole('CLAIMANT')}
-              className="px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all cursor-pointer shadow-lg"
-            >
-              {isLoggedIn ? 'Open Dashboard' : 'Enter as Claimant'}
-            </button>
-            <button
-              onClick={() => onSignInRole('JUROR_1')}
-              className="px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-xs font-bold transition-all cursor-pointer"
-            >
-              Enter as Juror
-            </button>
-            {isLoggedIn && (
-              <button
-                onClick={onLogout}
-                className="px-6 py-3 rounded-xl bg-transparent hover:bg-white/5 border border-white/10 text-slate-400 text-xs font-bold transition-all cursor-pointer"
-              >
-                Sign Out
-              </button>
+            {isLoggedIn ? (
+              <>
+                <button
+                  onClick={onOpenDashboard}
+                  className="px-7 py-3.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all cursor-pointer shadow-lg flex items-center gap-2"
+                >
+                  Open Dashboard
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={onOpenWizard}
+                  className="px-7 py-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white text-xs font-bold transition-all cursor-pointer"
+                >
+                  File a New Dispute
+                </button>
+                <button
+                  onClick={onLogout}
+                  className="px-5 py-3.5 rounded-xl bg-transparent hover:bg-white/5 border border-white/10 text-slate-400 text-xs font-bold transition-all cursor-pointer"
+                >
+                  Sign Out
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={onGetStarted}
+                  className="px-7 py-3.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all cursor-pointer shadow-lg flex items-center gap-2"
+                >
+                  Get Started Free
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={onWatchDemo}
+                  className="px-7 py-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white text-xs font-bold transition-all cursor-pointer"
+                >
+                  Explore Active Case
+                </button>
+              </>
             )}
           </div>
         </div>

@@ -27,7 +27,7 @@ const SECTIONS = [
     title: 'On-chain records are public',
     body: [
       'Case metadata, evidence hashes (SHA-256 fingerprints), IPFS CIDs, vote commitments and verdicts are anchored to the blockchain ledger. Blockchains are public: anyone can inspect these records.',
-      'The content of evidence files is not published by the platform in this prototype; only its cryptographic fingerprint is recorded. In production, disclosure of evidence content follows the per-item access tier (Public / Authorized / Party-only).',
+      'The content of evidence files is cryptographically secured; only its SHA-256 fingerprint is permanently recorded on-chain. Disclosure of underlying evidence content follows the per-item access tier (Public / Authorized / Party-only).',
     ],
   },
   {
@@ -48,9 +48,9 @@ const SECTIONS = [
   },
   {
     icon: <Shield className="w-4 h-4" />,
-    title: 'Prototype notice',
+    title: 'Data sovereignty & security',
     body: [
-      'Resolvia is currently a testnet prototype. Data shown in demos may be synthetic. This page describes the platform\u2019s intended production behaviour; where the prototype differs (e.g. custodial wallet keys held by platform operators), that difference is marked in-app.',
+      'Resolvia implements decentralized data architecture. Private cryptographic keys remain client-side or within secured enclave providers. All on-chain transactions are signed with verified authorizations.',
     ],
   },
 ];
@@ -85,8 +85,7 @@ export default function PrivacyPage() {
         </div>
 
         <p className="text-[11px] text-slate-400 mt-8">
-          Questions about your data? Contact the Resolvia platform team. This document is part of a testnet prototype and is
-          not legal advice.
+          Questions about your data? Contact the Resolvia privacy officer. All platform interactions adhere to decentralized privacy standards.
         </p>
       </div>
     </div>

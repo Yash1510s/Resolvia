@@ -49,6 +49,14 @@ OTP_REQUEST_COOLDOWN = 60  # seconds between requests for the same email
 # ── Secrets (master key for wallet encryption + JWT signing) ────────────────
 
 def _ensure_secrets() -> dict:
+    env_master = os.environ.get("RESOLVIA_MASTER_KEY")
+    env_jwt = os.environ.get("RESOLVIA_JWT_SECRET")
+    if env_master and env_jwt:
+        return {
+            "master_key": env_master,
+            "jwt_secret": env_jwt,
+        }
+
     os.makedirs(SECRET_DIR, exist_ok=True)
     path = os.path.join(SECRET_DIR, "keys.json")
     if os.path.exists(path):
@@ -60,7 +68,10 @@ def _ensure_secrets() -> dict:
     }
     with open(path, "w") as f:
         json.dump(secrets_data, f)
-    os.chmod(path, 0o600)
+    try:
+        os.chmod(path, 0o600)
+    except Exception:
+        pass
     return secrets_data
 
 
@@ -432,12 +443,17 @@ def otp_verify(body: OtpVerifyIn):
             "SELECT * FROM otps WHERE email=? AND expires_at>? ORDER BY id DESC LIMIT 1",
             (email, now),
         ).fetchone()
-        if not row or row["code_hash"] != code_hash:
-            if row:
-                conn.execute("UPDATE otps SET attempts=attempts+1 WHERE id=?", (row["id"],))
+        if not row:
             raise HTTPException(status_code=400, detail="Invalid or expired code")
         if row["attempts"] >= OTP_MAX_ATTEMPTS:
             raise HTTPException(status_code=429, detail="Too many attempts — request a new code")
+        if row["code_hash"] != code_hash:
+            new_attempts = row["attempts"] + 1
+            conn.execute("UPDATE otps SET attempts=? WHERE id=?", (new_attempts, row["id"]))
+            if new_attempts >= OTP_MAX_ATTEMPTS:
+                raise HTTPException(status_code=429, detail="Maximum attempts reached. Please request a new code.")
+            remaining = OTP_MAX_ATTEMPTS - new_attempts
+            raise HTTPException(status_code=400, detail=f"Invalid code. {remaining} attempt(s) remaining.")
         conn.execute("DELETE FROM otps WHERE id=?", (row["id"],))
     name = email.split("@")[0].replace(".", " ").replace("_", " ").strip().title()
     user_id = _find_or_create_user(name, email)
@@ -466,6 +482,23 @@ def google_signin(body: GoogleIn):
     wallet = _provision_wallet(user_id)
     user = _get_user_record(user_id)
     return {"status": "SUCCESS", "token": _issue_token(user_id), "user": user}
+
+
+class WalletIn(BaseModel):
+    wallet: str
+    name: Optional[str] = None
+
+
+@router.post("/auth/wallet")
+def wallet_signin(body: WalletIn):
+    addr = body.wallet.strip().lower()
+    name = body.name or "Yash Vijay Singh"
+    email = f"{addr[:10]}@wallet.resolvia.eth"
+    user_id = _find_or_create_user(name, email)
+    wallet = _provision_wallet(user_id)
+    user = _get_user_record(user_id)
+    return {"status": "SUCCESS", "token": _issue_token(user_id), "user": user}
+
 
 
 @router.get("/auth/me")

@@ -1,128 +1,514 @@
 """
 Resolvia AI Engine — Advisory Evidence Analysis & Legal Record Synthesis
-Implements:
-1. Untrusted input isolation (OWASP Prompt Injection Defense)
-2. Claim-to-Evidence Matrix Mapping
-3. Chronological Fact Timeline Extraction
-4. Contradiction & Discrepancy Radar
-5. Non-Binding Advisory Recommendation Generation
-6. Post-Verdict Canonical Legal Record Synthesis (BSA 2023 / ISO/IEC 27037)
+========================================================================
+Architecture:
+1. Untrusted Input Isolation (OWASP Top 10 for LLMs / Prompt Injection Defense)
+2. Pluggable Multi-Provider Support:
+   - Google Gemini (gemini-2.0-flash / gemini-1.5-flash via google.genai)
+   - OpenAI-compatible REST API (OpenAI, Groq, DeepSeek, OpenRouter)
+   - Local Ollama (offline, zero-cost, private)
+   - Dynamic Legal NLP Engine (intelligent deterministic fallback)
+3. Dynamic Chronological Fact & Timeline Extraction
+4. Claim-to-Evidence Matrix Mapping
+5. Contradiction & Discrepancy Radar
+6. Non-Binding Advisory Recommendation & Statutory Legal Disclaimers
 """
 
 import hashlib
 import json
+import os
 import re
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 ADVISORY_DISCLAIMER = (
     "IMPORTANT: This AI synthesis is non-binding and advisory only. "
-    "It is provided to assist evidence navigation. Authoritative verdict power "
-    "rests solely with the elected human jury."
+    "Under Section 63 of Bharatiya Sakshya Adhiniyam 2023, automated outputs "
+    "are non-binding decision-support indicators. Authoritative verdict power "
+    "rests solely with the elected human jury panel."
 )
 
 SUSPICIOUS_PROMPT_PATTERNS = [
-    r"ignore (all )?previous instructions",
+    r"ignore (all )?(previous|prior) instructions",
     r"system prompt",
-    r"you are now an? admin",
+    r"you are now an? (admin|judge|arbiter)",
     r"disregard (the )?above",
-    r"override verdict",
+    r"override (the )?verdict",
     r"grant all claims to",
+    r"jailbreak",
+    r"rule strictly in favor of",
+    r"forget what you were told",
+    r"<\|im_start\|>",
+    r"<\|im_end\|>",
 ]
 
 class PromptInjectionDefense:
-    """OWASP Prompt Injection sanitizer and adversarial pattern detector."""
-    
+    """OWASP LLM01 prompt injection sanitizer and adversarial pattern detector."""
+
     @staticmethod
     def inspect_text(content: str) -> Dict[str, Any]:
         threats_found = []
         for pattern in SUSPICIOUS_PROMPT_PATTERNS:
             if re.search(pattern, content, re.IGNORECASE):
                 threats_found.append(pattern)
-        
+
         status = "SECURE_CLEARED" if not threats_found else "SUSPICIOUS_PAYLOAD_ISOLATED"
         return {
             "status": status,
             "threatsDetected": len(threats_found),
             "threatPatterns": threats_found,
             "notes": (
-                "Strict data/instruction segregation applied. Evidence treated as passive data; "
-                "adversarial instructions neutralized."
+                "Strict data/instruction segregation applied. Evidence encapsulated inside "
+                "isolated XML delimiters to prevent instruction injection."
             )
         }
 
-class EvidenceAnalyzer:
-    """Extracts timeline, cross-examines claims, and computes consistency scores."""
-    
     @staticmethod
-    def compute_sha256(content: str) -> str:
-        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+    def sanitize_for_prompt(text: str) -> str:
+        """Strip control tokens and wrap in structural delimiters."""
+        clean = text.replace("<|im_start|>", "").replace("<|im_end|>", "")
+        return clean.strip()
+
+
+class EvidenceAnalyzer:
+    """Multi-provider dispute analyzer with fallback heuristics."""
+
+    @classmethod
+    def get_status(cls) -> Dict[str, Any]:
+        """Detect available provider and status."""
+        gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        openai_key = os.environ.get("OPENAI_API_KEY")
+        ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+
+        if gemini_key:
+            return {
+                "available": True,
+                "provider": "Google Gemini",
+                "model": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
+                "mode": "CLOUD_LLM",
+                "promptDefense": "ACTIVE"
+            }
+        elif openai_key:
+            return {
+                "available": True,
+                "provider": "OpenAI Compatible",
+                "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+                "mode": "CLOUD_LLM",
+                "promptDefense": "ACTIVE"
+            }
+        elif cls._check_ollama_alive(ollama_host):
+            return {
+                "available": True,
+                "provider": "Local Ollama",
+                "model": os.environ.get("OLLAMA_MODEL", "llama3"),
+                "mode": "LOCAL_LLM",
+                "promptDefense": "ACTIVE"
+            }
+        else:
+            return {
+                "available": True,
+                "provider": "Resolvia Dynamic NLP Engine",
+                "model": "Resolvia-Dynamic-NLP-v2.1 (Deterministic Fallback)",
+                "mode": "DETERMINISTIC_HEURISTIC",
+                "promptDefense": "ACTIVE"
+            }
 
     @staticmethod
+    def _check_ollama_alive(host: str) -> bool:
+        try:
+            req = urllib.request.Request(f"{host.rstrip('/')}/api/tags", method="GET")
+            with urllib.request.urlopen(req, timeout=1.0) as resp:
+                return resp.status == 200
+        except Exception:
+            return False
+
+    @classmethod
     def analyze_dispute(
+        cls,
         case_id: str,
         case_number: str,
         claimant_statement: str,
         respondent_statement: str,
         evidence_list: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
-        # 1. Sanitize all incoming text through prompt defense
+        # 1. OWASP Prompt Defense Inspection
         combined_text = f"{claimant_statement} {respondent_statement} " + " ".join([e.get("description", "") for e in evidence_list])
         defense_result = PromptInjectionDefense.inspect_text(combined_text)
 
-        # 2. Extract facts and timeline
-        timeline = [
-            {"time": "Day 0", "event": "Dispute initiated and contract scope defined"},
-            {"time": "Milestone Phase", "event": "Claimant submitted deliverable repository & test logs"},
-            {"time": "Review Phase", "event": "Respondent raised performance objection"},
-            {"time": "Lock Phase", "event": "All electronic evidence locked into content-addressed registry"},
-        ]
+        # 2. Attempt LLM generation based on configured provider
+        status = cls.get_status()
+        report_data = None
 
-        # 3. Detect contradictions
-        contradictions = []
-        if "reentrancy" in respondent_statement.lower() and "patch" in claimant_statement.lower():
-            contradictions.append({
-                "id": "CONTRA-01",
-                "severity": "MODERATE",
-                "title": "Unaddressed Patch Availability",
-                "description": "Respondent cited persistent vulnerability, but evidence indicates a patch commit was provided within agreed remediation window.",
-                "evidenceRefs": [e.get("id", "ev-01") for e in evidence_list[:2]]
-            })
+        if status["provider"] == "Google Gemini":
+            report_data = cls._try_gemini(
+                case_id, case_number, claimant_statement, respondent_statement, evidence_list
+            )
+        elif status["provider"] == "OpenAI Compatible":
+            report_data = cls._try_openai(
+                case_id, case_number, claimant_statement, respondent_statement, evidence_list
+            )
+        elif status["provider"] == "Local Ollama":
+            report_data = cls._try_ollama(
+                case_id, case_number, claimant_statement, respondent_statement, evidence_list
+            )
 
-        # 4. Synthesize advisory recommendation
-        advisory = {
-            "favoredParty": "Claimant" if len(evidence_list) >= 2 else "Split Settlement",
-            "confidence": 78 if len(evidence_list) >= 2 else 65,
-            "rationale": "Evidence confirms substantial deliverable execution; minor deficiencies do not warrant 100% fund forfeiture.",
-            "uncertaintyFactors": [
-                "Unrecorded informal chat communications cannot be mathematically verified on-chain.",
-                "Lack of explicit SLA response window in the initial contract agreement."
-            ]
-        }
+        # Fallback to dynamic heuristic NLP if LLM is unavailable or failed
+        if not report_data:
+            report_data = cls._dynamic_heuristic_analysis(
+                case_id, case_number, claimant_statement, respondent_statement, evidence_list
+            )
 
+        # 3. Assemble canonical report payload
         report_payload = {
             "reportId": f"AIR-{case_number}-GEN",
             "caseId": case_id,
             "generatedAt": datetime.now(timezone.utc).isoformat(),
-            "modelIdentifier": "Resolvia-LegalNLP-v2.4 (Transformer & Hybrid Verifier)",
+            "modelIdentifier": report_data.get("modelIdentifier", status["model"]),
             "promptInjectionDefense": defense_result,
-            "timeline": timeline,
-            "contradictions": contradictions,
-            "advisoryRecommendation": advisory,
+            "claimMappings": report_data.get("claimMappings", []),
+            "timeline": report_data.get("timeline", []),
+            "contradictions": report_data.get("contradictions", []),
+            "advisoryRecommendation": report_data.get("advisoryRecommendation", {
+                "favoredParty": "Split Settlement",
+                "confidence": 60,
+                "rationale": "Sufficient evidence exists on both sides to warrant a balanced resolution.",
+                "uncertaintyFactors": ["Informal communications lack timestamped cryptographic verification."]
+            }),
             "advisoryDisclaimer": ADVISORY_DISCLAIMER,
         }
 
-        # Canonical report hash
-        report_hash = hashlib.sha256(json.dumps(report_payload, sort_keys=True).encode("utf-8")).hexdigest()
-        report_payload["reportSha256"] = report_hash
+        # 4. Canonical cryptographic SHA-256 fingerprint
+        canonical_str = json.dumps(report_payload, sort_keys=True)
+        report_payload["reportSha256"] = hashlib.sha256(canonical_str.encode("utf-8")).hexdigest()
         return report_payload
 
+    @classmethod
+    def _try_gemini(
+        cls,
+        case_id: str,
+        case_number: str,
+        claimant: str,
+        respondent: str,
+        evidence: List[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        if not api_key:
+            return None
+
+        prompt = cls._build_analysis_prompt(case_number, claimant, respondent, evidence)
+        try:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=api_key)
+            model_name = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.2,
+                )
+            )
+            data = json.loads(response.text)
+            data["modelIdentifier"] = f"Google Gemini ({model_name})"
+            return data
+        except Exception as e:
+            print(f"[AI-Engine] Gemini generation failed: {e}")
+            return None
+
+    @classmethod
+    def _try_openai(
+        cls,
+        case_id: str,
+        case_number: str,
+        claimant: str,
+        respondent: str,
+        evidence: List[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            return None
+
+        base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+        model_name = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+        prompt = cls._build_analysis_prompt(case_number, claimant, respondent, evidence)
+
+        payload = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": "You are Resolvia's legal dispute evidence analysis engine. Output strictly valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.2
+        }
+
+        try:
+            req = urllib.request.Request(
+                f"{base_url}/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=25.0) as resp:
+                res_body = json.loads(resp.read().decode("utf-8"))
+                content = res_body["choices"][0]["message"]["content"]
+                data = json.loads(content)
+                data["modelIdentifier"] = f"OpenAI Compatible ({model_name})"
+                return data
+        except Exception as e:
+            print(f"[AI-Engine] OpenAI API call failed: {e}")
+            return None
+
+    @classmethod
+    def _try_ollama(
+        cls,
+        case_id: str,
+        case_number: str,
+        claimant: str,
+        respondent: str,
+        evidence: List[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        host = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+        model_name = os.environ.get("OLLAMA_MODEL", "llama3")
+        prompt = cls._build_analysis_prompt(case_number, claimant, respondent, evidence)
+
+        payload = {
+            "model": model_name,
+            "prompt": prompt,
+            "format": "json",
+            "stream": False,
+            "options": {"temperature": 0.2}
+        }
+
+        try:
+            req = urllib.request.Request(
+                f"{host}/api/generate",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=35.0) as resp:
+                res_body = json.loads(resp.read().decode("utf-8"))
+                content = res_body.get("response", "{}")
+                data = json.loads(content)
+                data["modelIdentifier"] = f"Local Ollama ({model_name})"
+                return data
+        except Exception as e:
+            print(f"[AI-Engine] Ollama generation failed: {e}")
+            return None
+
+    @staticmethod
+    def _build_analysis_prompt(
+        case_number: str,
+        claimant: str,
+        respondent: str,
+        evidence: List[Dict[str, Any]]
+    ) -> str:
+        evidence_summary = json.dumps([
+            {"id": e.get("id"), "title": e.get("title") or e.get("fileName"), "description": e.get("description", "")}
+            for e in evidence
+        ], indent=2)
+
+        return f"""You are the Resolvia Legal Advisory Analysis Engine.
+Analyze the following dispute impartially. DO NOT ACT AS A JUDGE. Produce a strictly non-binding advisory synthesis.
+Return your response as a JSON object adhering to this schema:
+{{
+  "claimMappings": [
+    {{
+      "claimId": "CLM-1",
+      "party": "Claimant",
+      "assertion": "summary of assertion",
+      "evidenceIds": ["ev-01"],
+      "credibilityScore": 85,
+      "aiObservation": "analysis observation"
+    }},
+    {{
+      "claimId": "CLM-2",
+      "party": "Respondent",
+      "assertion": "summary of assertion",
+      "evidenceIds": ["ev-02"],
+      "credibilityScore": 75,
+      "aiObservation": "analysis observation"
+    }}
+  ],
+  "timeline": [
+    {{"time": "Phase/Date 1", "event": "description"}},
+    {{"time": "Phase/Date 2", "event": "description"}}
+  ],
+  "contradictions": [
+    {{
+      "id": "CONTRA-01",
+      "severity": "CRITICAL" | "MODERATE" | "LOW",
+      "title": "Short title",
+      "description": "Explanation of direct clash between party claims or evidence",
+      "evidenceRefs": ["ev-01"]
+    }}
+  ],
+  "advisoryRecommendation": {{
+    "favoredParty": "Claimant" | "Respondent" | "Split Settlement",
+    "confidence": 75,
+    "rationale": "Clear, balanced rationale explaining the assessment",
+    "uncertaintyFactors": ["Uncertainty item 1", "Uncertainty item 2"]
+  }}
+}}
+
+<untrusted_claimant_statement>
+{PromptInjectionDefense.sanitize_for_prompt(claimant)}
+</untrusted_claimant_statement>
+
+<untrusted_respondent_statement>
+{PromptInjectionDefense.sanitize_for_prompt(respondent)}
+</untrusted_respondent_statement>
+
+<registered_evidence_list>
+{evidence_summary}
+</registered_evidence_list>
+"""
+
+    @classmethod
+    def _dynamic_heuristic_analysis(
+        cls,
+        case_id: str,
+        case_number: str,
+        claimant: str,
+        respondent: str,
+        evidence: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Intelligent deterministic legal NLP extraction for zero-key/offline operation."""
+        # 1. Timeline Extraction from Statements
+        timeline = []
+        combined_text = f"{claimant}\n{respondent}"
+
+        date_matches = re.findall(
+            r"(\b(?:Day \d+|Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b[^\.\n;]*)",
+            combined_text,
+            re.IGNORECASE
+        )
+        if date_matches:
+            for i, match in enumerate(date_matches[:4]):
+                clean_m = match.strip()
+                timeline.append({
+                    "time": f"Event {i+1}",
+                    "event": clean_m[:120]
+                })
+        else:
+            timeline = [
+                {"time": "Dispute Filing", "event": "Initial claim submitted with anti-spam stake locked in escrow"},
+                {"time": "Evidence Submissions", "event": f"{len(evidence)} evidence document(s) registered on-chain with SHA-256 hashes"},
+                {"time": "Counter-Claim", "event": "Respondent filed formal rebuttal and counter-statement"},
+                {"time": "Jury Emblockment", "event": "Commit-reveal voting window opened for human arbitrator panel"},
+            ]
+
+        # 2. Contradiction Detection
+        contradictions = []
+        claimant_lower = claimant.lower()
+        resp_lower = respondent.lower()
+
+        # Check delivery / completion conflict
+        if any(w in claimant_lower for w in ["delivered", "completed", "submitted", "done", "98%", "covered"]) and \
+           any(w in resp_lower for w in ["incomplete", "failed", "vulnerability", "breach", "not delivered", "missing"]):
+            contradictions.append({
+                "id": "CONTRA-01",
+                "severity": "CRITICAL",
+                "title": "Deliverable Completion vs Non-Conformity Dispute",
+                "description": "Claimant asserts full execution and deliverable submission, whereas Respondent alleges material deficiencies or failure to meet agreed thresholds.",
+                "evidenceRefs": [e.get("id", "ev-01") for e in evidence[:2]]
+            })
+
+        # Check payment / refund conflict
+        if any(w in claimant_lower for w in ["unpaid", "pending payment", "invoice", "compensation"]) and \
+           any(w in resp_lower for w in ["refund", "damage", "deduction", "overpaid"]):
+            contradictions.append({
+                "id": "CONTRA-02",
+                "severity": "MODERATE",
+                "title": "Remuneration & Financial Remedy Clash",
+                "description": "Parties diverge on whether outstanding contract funds are payable or subject to set-off damages.",
+                "evidenceRefs": [e.get("id", "ev-01") for e in evidence[:1]]
+            })
+
+        # Default fallback contradiction if none found
+        if not contradictions:
+            contradictions.append({
+                "id": "CONTRA-01",
+                "severity": "LOW",
+                "title": "Interpretation of Contractual Obligations",
+                "description": "Factual disagreement regarding contract scope and required remediations.",
+                "evidenceRefs": [e.get("id", "ev-01") for e in evidence[:1]] if evidence else []
+            })
+
+        # 3. Claim Mapping
+        evidence_count = len(evidence)
+        claimant_cred = min(92, 70 + (evidence_count * 8))
+        resp_cred = min(88, 65 + (evidence_count * 5))
+
+        claim_mappings = [
+            {
+                "claimId": "CLM-1",
+                "party": "Claimant",
+                "assertion": claimant[:160] if claimant else "Execution of contractual deliverable as agreed.",
+                "evidenceIds": [e.get("id", "ev-01") for e in evidence[:1]] if evidence else [],
+                "credibilityScore": claimant_cred,
+                "aiObservation": f"Substantiated by {evidence_count} registered electronic evidence record(s)."
+            },
+            {
+                "claimId": "CLM-2",
+                "party": "Respondent",
+                "assertion": respondent[:160] if respondent else "Defense against contractual claim citing performance variance.",
+                "evidenceIds": [e.get("id", "ev-02") for e in evidence[1:2]] if len(evidence) > 1 else [],
+                "credibilityScore": resp_cred,
+                "aiObservation": "Defense presents counter-considerations requiring independent juror evaluation."
+            }
+        ]
+
+        # 4. Advisory Recommendation
+        if evidence_count >= 2:
+            favored = "Claimant"
+            conf = 78
+            rationale = "Claimant's registered evidence exhibits verifiable cryptographic audit trail supporting contractual performance."
+        elif evidence_count == 1:
+            favored = "Split Settlement"
+            conf = 65
+            rationale = "Partial documentation available. Merit exists on both sides, suggesting an equitable partial release of escrowed funds."
+        else:
+            favored = "Split Settlement"
+            conf = 55
+            rationale = "Limited external evidence registered. Resolution depends primarily on cross-examination by human jury."
+
+        return {
+            "modelIdentifier": "Resolvia-Dynamic-NLP-v2.1 (Deterministic Fallback)",
+            "claimMappings": claim_mappings,
+            "timeline": timeline,
+            "contradictions": contradictions,
+            "advisoryRecommendation": {
+                "favoredParty": favored,
+                "confidence": conf,
+                "rationale": rationale,
+                "uncertaintyFactors": [
+                    "Informal off-chain communications lack cryptographic anchoring.",
+                    "SLA response window clauses are ambiguous in the primary contract."
+                ]
+            }
+        }
+
+
 if __name__ == "__main__":
+    status = EvidenceAnalyzer.get_status()
+    print("Engine status:", status)
     sample = EvidenceAnalyzer.analyze_dispute(
         case_id="case-084",
         case_number="RSLV-2026-084",
-        claimant_statement="Delivered complete contracts with 98% coverage on time.",
-        respondent_statement="Contract had reentrancy concerns and failed diagnostic checks.",
-        evidence_list=[{"id": "ev-01", "description": "Foundry logs"}, {"id": "ev-02", "description": "Chat log"}]
+        claimant_statement="Delivered complete audited smart contracts on Sept 14th with 98% test coverage.",
+        respondent_statement="On Sept 16th we identified high vulnerability risks and contract failed diagnostic checks.",
+        evidence_list=[{"id": "ev-01", "description": "Audit Report PDF", "fileName": "audit.pdf"}]
     )
-    print("AI Analysis Engine initialized successfully. Canonical hash:", sample["reportSha256"])
+    print("Analysis complete. Hash:", sample["reportSha256"])
+    print("Model:", sample["modelIdentifier"])
+    print("Advisory Favored:", sample["advisoryRecommendation"]["favoredParty"])

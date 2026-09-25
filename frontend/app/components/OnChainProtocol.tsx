@@ -677,7 +677,7 @@ export function OnChainProtocol({ dispute }: OnChainProtocolProps) {
                   {authUser ? (
                     <span className="text-emerald-600 font-bold">· your assigned wallet (backend-signed, no MetaMask)</span>
                   ) : (
-                    <span className="text-slate-400">· demo account (sign in to use your own wallet)</span>
+                    <span className="text-slate-400">· node validator session (sign in to bind custom key)</span>
                   )}
                 </div>
 

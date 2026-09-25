@@ -21,17 +21,25 @@ _DB_PATH = os.path.join(os.path.dirname(__file__), "state.db")
 _lock = threading.Lock()
 
 
+def _init_db() -> None:
+    with sqlite3.connect(_DB_PATH) as c:
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA busy_timeout=5000")
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_state (
+                sub TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+_init_db()
+
 def _conn() -> sqlite3.Connection:
     c = sqlite3.connect(_DB_PATH)
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS user_state (
-            sub TEXT PRIMARY KEY,
-            payload TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-        """
-    )
+    c.execute("PRAGMA busy_timeout=5000")
     return c
 
 

@@ -10,7 +10,7 @@ import {
 const JUROR = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 const OTHER_JUROR = '0x90F79bf6EB2c4f870365E785982E1f101E93b906';
 const SALT = '0x' + 'ab'.repeat(32);
-const CASE_ID = 1091n;
+const CASE_ID = BigInt(1091);
 
 describe('packCommitmentInput', () => {
   it('produces exactly 85 bytes (1 + 32 + 32 + 20)', () => {
@@ -67,8 +67,8 @@ describe('computeCommitment', () => {
   });
 
   it('binds the case (replay-proof across cases)', () => {
-    const a = computeCommitment(1, SALT, 1091n, JUROR);
-    const b = computeCommitment(1, SALT, 1092n, JUROR);
+    const a = computeCommitment(1, SALT, BigInt(1091), JUROR);
+    const b = computeCommitment(1, SALT, BigInt(1092), JUROR);
     expect(a).not.toBe(b);
   });
 

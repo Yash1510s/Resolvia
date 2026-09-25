@@ -180,12 +180,114 @@ export function Toggle({ on, onChange, disabled = false }: { on: boolean; onChan
   );
 }
 
-export function BtnPrimary({ children, onClick, href, className = '', disabled = false, type }: { children: React.ReactNode; onClick?: () => void; href?: string; className?: string; disabled?: boolean; type?: 'button' | 'submit' }) {
-  const cls = `inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${className}`;
-  if (href && !disabled) return <Link href={href} className={cls}>{children}</Link>;
+export function Spinner({ size = 'md', className = '' }: { size?: 'sm' | 'md' | 'lg'; className?: string }) {
+  const sizeMap = {
+    sm: 'w-3.5 h-3.5',
+    md: 'w-4.5 h-4.5',
+    lg: 'w-6 h-6',
+  };
   return (
-    <button type={type || 'button'} onClick={onClick} disabled={disabled} className={cls}>
-      {children}
+    <svg
+      className={`animate-spin text-current ${sizeMap[size]} ${className}`}
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      />
+    </svg>
+  );
+}
+
+export function Skeleton({ className = '' }: { className?: string }) {
+  return <div className={`animate-pulse bg-slate-200/80 rounded-xl ${className}`} />;
+}
+
+export function SkeletonCard() {
+  return (
+    <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3">
+      <div className="flex items-center justify-between">
+        <Skeleton className="w-24 h-4" />
+        <Skeleton className="w-16 h-5 rounded-full" />
+      </div>
+      <Skeleton className="w-3/4 h-5" />
+      <Skeleton className="w-full h-3" />
+      <Skeleton className="w-1/2 h-3" />
+      <div className="pt-2 flex items-center justify-between border-t border-slate-100">
+        <Skeleton className="w-20 h-4" />
+        <Skeleton className="w-28 h-8 rounded-xl" />
+      </div>
+    </div>
+  );
+}
+
+export function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+}: {
+  icon?: React.ReactNode;
+  title: string;
+  description: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="p-10 rounded-2xl bg-white border border-slate-200 text-center space-y-4 shadow-xs">
+      {icon && (
+        <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-500 mx-auto flex items-center justify-center">
+          {icon}
+        </div>
+      )}
+      <div className="max-w-md mx-auto">
+        <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+        <p className="text-xs text-slate-500 mt-1 leading-relaxed">{description}</p>
+      </div>
+      {action && <div className="pt-1">{action}</div>}
+    </div>
+  );
+}
+
+export function BtnPrimary({
+  children,
+  onClick,
+  href,
+  className = '',
+  disabled = false,
+  loading = false,
+  loadingText,
+  type,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  href?: string;
+  className?: string;
+  disabled?: boolean;
+  loading?: boolean;
+  loadingText?: string;
+  type?: 'button' | 'submit';
+}) {
+  const cls = `inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${className}`;
+  if (href && !disabled && !loading) return <Link href={href} className={cls}>{children}</Link>;
+  return (
+    <button
+      type={type || 'button'}
+      onClick={onClick}
+      disabled={disabled || loading}
+      className={cls}
+    >
+      {loading ? (
+        <>
+          <Spinner size="sm" />
+          <span>{loadingText || 'Processing…'}</span>
+        </>
+      ) : (
+        children
+      )}
     </button>
   );
 }
@@ -198,7 +300,7 @@ export function BtnGhost({ children, onClick, className = '' }: { children: Reac
   );
 }
 
-export function ComingSoon({ text = 'Prototype — coming soon' }: { text?: string }) {
+export function ComingSoon({ text = 'Protocol Roadmap' }: { text?: string }) {
   return <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-500 text-[10px] font-bold">{text}</span>;
 }
 

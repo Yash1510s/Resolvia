@@ -18,6 +18,8 @@ import {
   HelpCircle,
   FileCheck,
   Landmark,
+  X,
+  Copy,
 } from 'lucide-react';
 import { Card, Chip, BtnPrimary } from '../../components/ui';
 
@@ -69,6 +71,8 @@ const POPULAR = [
 export default function ResourcesPage() {
   const [cat, setCat] = useState<Cat>('ALL');
   const [saved, setSaved] = useState<Set<string>>(new Set());
+  const [activeResource, setActiveResource] = useState<Res | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const shown = useMemo(() => (cat === 'ALL' ? RESOURCES : RESOURCES.filter((r) => r.cat === cat)), [cat]);
 
@@ -79,6 +83,33 @@ export default function ResourcesPage() {
       else n.add(t);
       return n;
     });
+  };
+
+  const getResourceDetails = (r: Res) => {
+    switch (r.title) {
+      case 'How to Create a Strong Case':
+        return {
+          sections: [
+            { title: '1. Establish Facts in Chronological Order', body: 'Structure the event timeline with exact dates, agreements, and deliverables. Avoid emotional language and focus strictly on verifiable facts.' },
+            { title: '2. Submit High-Integrity Evidence', body: 'Upload original contracts, chat exports, transaction receipts, and deliverables. Ensure files are SHA-256 fingerprinted in-browser before upload.' },
+            { title: '3. Formulate Clear Relief Sought', body: 'Clearly specify whether you seek escrow release, refund, contract reformation, or an apology. Specify the exact token or fiat equivalent.' },
+          ],
+        };
+      case 'Evidence Submission Checklist':
+        return {
+          sections: [
+            { title: 'Pre-flight Checklist', body: '✓ Original file bytes verified\n✓ No personal identifying information (PII) without consent\n✓ Access tier selected (Public vs Restricted)\n✓ SHA-256 hash previewed and validated on-chain' },
+            { title: 'Acceptable File Formats', body: 'PDF contracts, PNG/JPG receipts or screenshots, audio/video recordings, and cryptographically signed message logs.' },
+          ],
+        };
+      default:
+        return {
+          sections: [
+            { title: 'Overview & Principles', body: `${r.desc} On Resolvia, procedures are transparent and cryptographically anchored to ensure complete neutrality and fairness for all parties.` },
+            { title: 'Key Takeaways', body: '• Follow standard evidence hygiene and preserve original timestamps.\n• Respond within stated deadlines to avoid default determinations.\n• Deliberate objectively when serving on peer jury panels.' },
+          ],
+        };
+    }
   };
 
   return (
@@ -164,13 +195,24 @@ export default function ResourcesPage() {
             <Card className="p-5">
               <div className="flex items-center justify-between mb-3.5">
                 <h3 className="text-[15px] font-black text-slate-900">Latest Resources</h3>
-                <button className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700">View All <ArrowRight className="w-3 h-3" /></button>
+                <button
+                  type="button"
+                  onClick={() => setCat('ALL')}
+                  className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700 cursor-pointer"
+                >
+                  View All <ArrowRight className="w-3 h-3" />
+                </button>
               </div>
               <div className="space-y-3.5">
                 {shown.slice(0, 6).map((r) => (
-                  <div key={r.title} className="flex items-center gap-3 group">
+                  <button
+                    key={r.title}
+                    type="button"
+                    onClick={() => setActiveResource(r)}
+                    className="w-full flex items-center gap-3 group text-left p-2 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+                  >
                     <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center shrink-0">
-                      {r.type === 'Case Study' ? <BookOpen className="w-5 h-5 text-slate-400" /> : r.type === 'Template' ? <FileText className="w-5 h-5 text-slate-400" /> : r.type === 'Reference' ? <Landmark className="w-5 h-5 text-slate-400" /> : <FileCheck className="w-5 h-5 text-slate-400" />}
+                      {r.type === 'Case Study' ? <BookOpen className="w-5 h-5 text-slate-500" /> : r.type === 'Template' ? <FileText className="w-5 h-5 text-slate-500" /> : r.type === 'Reference' ? <Landmark className="w-5 h-5 text-slate-500" /> : <FileCheck className="w-5 h-5 text-slate-500" />}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-[12.5px] font-bold text-slate-800 group-hover:text-violet-700 transition-colors truncate">{r.title}</p>
@@ -180,7 +222,7 @@ export default function ResourcesPage() {
                       </div>
                     </div>
                     <span className="text-[10px] text-slate-400 shrink-0">{r.date}</span>
-                  </div>
+                  </button>
                 ))}
                 {shown.length === 0 && <p className="text-[12px] text-slate-400 py-6 text-center">No resources in this category yet.</p>}
               </div>
@@ -190,11 +232,25 @@ export default function ResourcesPage() {
             <Card className="p-5 h-fit">
               <div className="flex items-center justify-between mb-3.5">
                 <h3 className="text-[15px] font-black text-slate-900">Popular Topics</h3>
-                <button className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700">View All <ArrowRight className="w-3 h-3" /></button>
+                <button
+                  type="button"
+                  onClick={() => setCat('ALL')}
+                  className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700 cursor-pointer"
+                >
+                  View All <ArrowRight className="w-3 h-3" />
+                </button>
               </div>
               <div className="space-y-1">
                 {POPULAR.map((p, i) => (
-                  <button key={p.q} className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 transition-colors text-left">
+                  <button
+                    key={p.q}
+                    type="button"
+                    onClick={() => {
+                      const match = RESOURCES.find((r) => r.title.toLowerCase().includes(p.q.slice(0, 10).toLowerCase())) || RESOURCES[0];
+                      setActiveResource(match);
+                    }}
+                    className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                  >
                     <span className={`w-7 h-7 rounded-full text-[11px] font-black flex items-center justify-center shrink-0 ${i === 0 ? 'bg-violet-600 text-white' : i === 1 ? 'bg-blue-500 text-white' : i === 2 ? 'bg-emerald-500 text-white' : i === 3 ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
                       {i + 1}
                     </span>
@@ -214,7 +270,13 @@ export default function ResourcesPage() {
           <Card className="p-5">
             <div className="flex items-center justify-between mb-3.5">
               <h3 className="text-[14px] font-black text-slate-900">Quick Links</h3>
-              <button className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700">View All <ArrowRight className="w-3 h-3" /></button>
+              <button
+                type="button"
+                onClick={() => setCat('ALL')}
+                className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700 cursor-pointer"
+              >
+                View All <ArrowRight className="w-3 h-3" />
+              </button>
             </div>
             <div className="space-y-2">
               {[
@@ -258,12 +320,64 @@ export default function ResourcesPage() {
               <h3 className="text-[15px] font-black text-slate-900">Need More Help?</h3>
             </div>
             <p className="text-[12px] text-slate-500 mt-3 leading-relaxed">Visit our Help Center or reach out to our support team.</p>
-            <button className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-700 text-xs font-bold transition-colors">
+            <Link href="/how-it-works" className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-700 text-xs font-bold transition-colors">
               Go to Help Center <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+            </Link>
           </div>
         </div>
       </div>
+
+      {/* Resource Reader Modal */}
+      {activeResource && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto shadow-2xl border border-slate-200 p-6 relative animate-scale-up">
+            <button
+              onClick={() => setActiveResource(null)}
+              className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-2 mb-2">
+              <Chip tone={TYPE_TONE[activeResource.type]}>{activeResource.type}</Chip>
+              <span className="text-[11px] text-slate-400">· {activeResource.date}</span>
+            </div>
+            <h2 className="text-xl font-black text-slate-900 leading-tight">{activeResource.title}</h2>
+            <p className="text-xs text-slate-500 mt-2 pb-4 border-b border-slate-100">{activeResource.desc}</p>
+
+            <div className="mt-5 space-y-4">
+              {getResourceDetails(activeResource).sections.map((sec, i) => (
+                <div key={i} className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+                  <h4 className="text-xs font-bold text-slate-900 mb-1.5">{sec.title}</h4>
+                  <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">{sec.body}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
+              <button
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    const text = `${activeResource.title}\n\n${activeResource.desc}\n\n` +
+                      getResourceDetails(activeResource).sections.map(s => `${s.title}\n${s.body}`).join('\n\n');
+                    navigator.clipboard.writeText(text);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }
+                }}
+                className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5" /> {copied ? 'Copied to Clipboard!' : 'Copy Resource Text'}
+              </button>
+              <button
+                onClick={() => setActiveResource(null)}
+                className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold cursor-pointer transition-colors"
+              >
+                Done Reading
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

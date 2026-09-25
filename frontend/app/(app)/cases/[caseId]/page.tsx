@@ -267,6 +267,12 @@ function EvidenceSection({ dispute }: { dispute: DisputeCase }) {
         await addEvidence(dispute.id);
         setAdding(false);
       }}
+      onUploadFile={async (file: File) => {
+        if (adding) return;
+        setAdding(true);
+        await addEvidence(dispute.id, file);
+        setAdding(false);
+      }}
     />
   );
 }
