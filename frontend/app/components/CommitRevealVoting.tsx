@@ -14,7 +14,12 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import { JurorAssignment, VoteChoice } from '../types';
-import { computeVoteCommitment, formatHash, generateRandomSalt } from '../lib/crypto';
+import { formatHash } from '../lib/crypto';
+import {
+  computeVoteChoiceCommitment,
+  generateSalt32,
+  verifyVoteChoiceCommitment,
+} from '../lib/commitment';
 import { jurorPseudonym } from '../lib/jury';
 
 interface CommitRevealVotingProps {
@@ -23,6 +28,7 @@ interface CommitRevealVotingProps {
   onCommitVote: (jurorId: string, commitment: string, vote: VoteChoice, salt: string, reasoning?: string) => void;
   onRevealVote: (jurorId: string, vote: VoteChoice, salt: string, reasoning?: string) => void;
   votingDeadline: string;
+  caseId?: string;
 }
 
 export function CommitRevealVoting({
@@ -31,6 +37,7 @@ export function CommitRevealVoting({
   onCommitVote,
   onRevealVote,
   votingDeadline,
+  caseId,
 }: CommitRevealVotingProps) {
   const [vote, setVote] = useState<VoteChoice>('CLAIMANT_UPHELD');
   const [salt, setSalt] = useState<string>('');
@@ -42,6 +49,8 @@ export function CommitRevealVoting({
 
   const currentJuror = jurors.find((j) => j.jurorId === currentJurorId);
   const committedJurors = jurors.filter((j) => j.status === 'COMMITTED' || j.status === 'REVEALED');
+  const effectiveCaseId = caseId || '1';
+  const currentJurorAddress = currentJuror?.walletAddress || currentJuror?.jurorId || '0x0000000000000000000000000000000000000001';
   const revealedJurors = jurors.filter((j) => j.status === 'REVEALED');
 
   // If the current juror has already committed, show reveal phase
@@ -64,7 +73,7 @@ export function CommitRevealVoting({
   const commitClosed = nowMs !== null && nowMs > deadlineMs;
   const revealClosed = nowMs !== null && nowMs > deadlineMs + 86_400_000;
 
-  // Real cryptographic verification before reveal: recompute SHA-256(vote : salt)
+  // Real cryptographic verification before reveal: recompute Keccak-256(vote || salt || caseId || juror)
   // and compare with the locked commitment. Reveal is blocked on mismatch.
   const [verify, setVerify] = useState<'idle' | 'checking' | 'match' | 'mismatch'>('idle');
   useEffect(() => {
@@ -79,20 +88,21 @@ export function CommitRevealVoting({
       return;
     }
     setVerify('checking');
-    let live = true;
-    computeVoteCommitment(v, s).then((h) => {
-      if (live) setVerify(h.toLowerCase() === (currentJuror.commitmentHash || '').toLowerCase() ? 'match' : 'mismatch');
-    });
-    return () => {
-      live = false;
-    };
-  }, [phase, currentJuror, vote, salt]);
+    const isMatch = verifyVoteChoiceCommitment(
+      v,
+      s,
+      effectiveCaseId,
+      currentJurorAddress,
+      currentJuror.commitmentHash || ''
+    );
+    setVerify(isMatch ? 'match' : 'mismatch');
+  }, [phase, currentJuror, vote, salt, effectiveCaseId, currentJurorAddress]);
 
   const handleCommitSubmit = async () => {
     if (!currentJuror || !salt) return;
     setProcessing('commit');
-    // Commitment = 0x + SHA-256(VOTE : salt) via lib/crypto.ts
-    const hash = await computeVoteCommitment(vote, salt);
+    // Commitment = Keccak-256(vote || salt || caseId || juror) matching VotingManager.sol
+    const hash = computeVoteChoiceCommitment(vote, salt, effectiveCaseId, currentJurorAddress);
     setCommitment(hash);
     await new Promise((r) => setTimeout(r, 500));
     onCommitVote(currentJuror.jurorId, hash, vote, salt, reasoning.trim() || undefined);
@@ -123,12 +133,14 @@ export function CommitRevealVoting({
       <div className="p-5 rounded-2xl bg-purple-50/60 border border-purple-100 flex items-start gap-3">
         <Shield className="w-5 h-5 text-purple-600 shrink-0 mt-0.5" />
         <div>
-          <h4 className="text-xs font-bold text-purple-900">Commit–Reveal Protocol</h4>
+          <h4 className="text-xs font-bold text-purple-900">Commit–Reveal Protocol (On-Chain Keccak-256)</h4>
           <p className="text-[11px] text-purple-700/80 mt-1 leading-relaxed">
-            <strong>Commit phase:</strong> each juror locks <span className="font-mono">SHA-256(vote + salt)</span>{' '}
-            on-chain before the deadline — the vote cannot be changed afterwards.{' '}
-            <strong>Reveal phase:</strong> the salt is published; anyone can verify the revealed vote
-            matches the original commitment. Bribery and post-deadline pressure are cryptographically ruled out.
+            <strong>Commit phase:</strong> each juror locks an on-chain{' '}
+            <span className="font-mono">Keccak-256(voteChoice || salt || caseId || jurorAddress)</span>{' '}
+            blind commitment before the deadline — the vote cannot be altered or replayed.{' '}
+            <strong>Reveal phase:</strong> the 32-byte secret salt is submitted; smart contract verification
+            authenticates the vote against the original commitment. Bribery and post-deadline peer influence
+            are cryptographically eliminated.
           </p>
         </div>
       </div>
@@ -349,11 +361,11 @@ export function CommitRevealVoting({
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         type="button"
-                        onClick={() => setSalt(generateRandomSalt())}
+                        onClick={() => setSalt(generateSalt32())}
                         className="text-[10px] font-bold text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100 px-2 py-0.5 rounded-md transition-colors cursor-pointer flex items-center gap-1 shrink-0"
                       >
                         <RefreshCw className="w-3 h-3" />
-                        Generate Salt
+                        Generate Salt (32-byte)
                       </button>
                       {salt && (
                         <button
@@ -405,10 +417,15 @@ export function CommitRevealVoting({
                     Live Commitment Preview
                   </p>
                   {salt ? (
-                    <CommitmentPreview vote={vote} salt={salt} />
+                    <CommitmentPreview
+                      vote={vote}
+                      salt={salt}
+                      caseId={effectiveCaseId}
+                      jurorAddress={currentJurorAddress}
+                    />
                   ) : (
                     <p className="text-[11px] text-slate-400 font-mono">
-                      Enter a salt to compute SHA-256(vote + salt)…
+                      Enter or generate a 32-byte salt to compute Keccak-256 commitment…
                     </p>
                   )}
                 </div>
@@ -470,7 +487,7 @@ export function CommitRevealVoting({
                   </p>
                   {verify === 'checking' && (
                     <p className="text-[11px] text-slate-500 leading-relaxed flex items-center gap-2">
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Re-computing SHA-256(vote : salt) against the locked
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Re-computing Keccak-256(vote || salt || caseId || juror) against the locked
                       commitment…
                     </p>
                   )}
@@ -484,7 +501,7 @@ export function CommitRevealVoting({
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                       <p className="text-[11px] text-emerald-800 leading-relaxed">
                         Salt <span className="font-mono font-bold">{currentJuror.salt || '—'}</span> re-computed against the
-                        locked hash. <strong>MATCH CONFIRMED</strong> — the revealed vote is exactly what you committed.
+                        locked hash. <strong>MATCH CONFIRMED (Keccak-256)</strong> — the revealed vote is mathematically identical to your on-chain commitment.
                       </p>
                     </div>
                   )}
@@ -536,24 +553,33 @@ export function CommitRevealVoting({
 }
 
 /* Live-updating commitment hash preview */
-function CommitmentPreview({ vote, salt }: { vote: VoteChoice; salt: string }) {
+function CommitmentPreview({
+  vote,
+  salt,
+  caseId,
+  jurorAddress,
+}: {
+  vote: VoteChoice;
+  salt: string;
+  caseId: string;
+  jurorAddress: string;
+}) {
   const [hash, setHash] = useState<string>('');
 
   useEffect(() => {
-    let live = true;
-    computeVoteCommitment(vote, salt).then((h) => {
-      if (live) setHash(h);
-    });
-    return () => {
-      live = false;
-    };
-  }, [vote, salt]);
+    try {
+      const h = computeVoteChoiceCommitment(vote, salt, caseId, jurorAddress);
+      setHash(h);
+    } catch {
+      setHash('');
+    }
+  }, [vote, salt, caseId, jurorAddress]);
 
   return (
     <div>
       <p className="text-[11px] font-mono text-slate-700 break-all leading-relaxed">{hash || 'computing…'}</p>
       <p className="text-[9px] text-slate-400 mt-1.5 font-mono">
-        SHA-256({vote} : {salt})
+        keccak256(abi.encodePacked(uint8, bytes32 salt, uint256 caseId, address juror))
       </p>
     </div>
   );

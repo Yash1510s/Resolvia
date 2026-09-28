@@ -78,4 +78,6 @@ desktop.ini
 backend/secret/
 backend/resolvia_auth.db
 backend/resolvia_auth.db-*
+backend/state.db
+backend/state.db-*
 backend/__pycache__/

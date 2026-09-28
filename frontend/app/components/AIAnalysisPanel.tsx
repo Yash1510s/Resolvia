@@ -12,6 +12,12 @@ import {
   RefreshCw,
   Sparkles,
   GitBranch,
+  Binary,
+  Fingerprint,
+  CheckCheck,
+  BarChart3,
+  Layers,
+  Scale,
 } from 'lucide-react';
 import { AIAnalysisReport } from '../types';
 
@@ -38,9 +44,9 @@ export function AIAnalysisPanel({ report, onRunAnalysis, isAnalyzing }: AIAnalys
   if (isAnalyzing) {
     const steps = [
       { label: 'OWASP LLM01 Defense', detail: 'Isolating untrusted party claims & sanitizing prompt injection vectors' },
+      { label: 'Deterministic ML Champion Inference', detail: 'Evaluating XGBoost 119-feature statistical risk model' },
       { label: 'Cryptographic Cross-Reference', detail: 'Matching claim assertions with on-chain SHA-256 evidence digests' },
-      { label: 'Chronological Timeline Extraction', detail: 'Synthesizing verifiable milestone event sequence' },
-      { label: 'Contradiction Radar & Advisory', detail: 'Evaluating factual clashes and generating non-binding jury advisory' },
+      { label: 'Contradiction Radar & Dual Consensus', detail: 'Cross-checking LLM advisory against ML model predictions' },
     ];
 
     return (
@@ -56,7 +62,7 @@ export function AIAnalysisPanel({ report, onRunAnalysis, isAnalyzing }: AIAnalys
                 Resolvia AI Advisory Pipeline Active
                 <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
               </h3>
-              <p className="text-[11px] text-slate-400">Multi-stage evidence analysis & contradiction scan</p>
+              <p className="text-[11px] text-slate-400">Dual-engine evidence synthesis: LLM + ML Classifier</p>
             </div>
           </div>
           <div className="text-right">
@@ -117,7 +123,7 @@ export function AIAnalysisPanel({ report, onRunAnalysis, isAnalyzing }: AIAnalys
             <Shield className="w-3.5 h-3.5 text-violet-400" />
             OWASP LLM01 Sanitization Active
           </span>
-          <span className="font-mono text-[10px] text-slate-500">Model: Gemini 2.0 / NLP Hybrid</span>
+          <span className="font-mono text-[10px] text-slate-500">Engines: Generative LLM + XGBoost ML</span>
         </div>
       </div>
     );
@@ -130,10 +136,10 @@ export function AIAnalysisPanel({ report, onRunAnalysis, isAnalyzing }: AIAnalys
           <Cpu className="w-7 h-7" />
         </div>
         <div>
-          <h3 className="text-sm font-bold text-slate-900">NeuralNLP Advisory Not Yet Generated</h3>
+          <h3 className="text-sm font-bold text-slate-900">NeuralNLP + ML Advisory Not Yet Generated</h3>
           <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
-            The engine maps each party’s assertions to anchored evidence, syncs a chronological
-            timeline, detects contradictions, and scans every payload for prompt-injection.
+            The dual engine runs a trained 119-feature statistical ML classifier alongside generative LLM
+            reasoning, maps claims to anchored evidence, and scans for prompt-injection attacks.
           </p>
         </div>
         <button
@@ -142,11 +148,14 @@ export function AIAnalysisPanel({ report, onRunAnalysis, isAnalyzing }: AIAnalys
           className="px-6 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all cursor-pointer shadow-md disabled:opacity-50 inline-flex items-center gap-2"
         >
           <Sparkles className="w-4 h-4" />
-          <span>Run Advisory Analysis</span>
+          <span>Run Dual-Engine Advisory</span>
         </button>
       </div>
     );
   }
+
+  const consensus = report.modelConsensus;
+  const ml = report.mlPrediction;
 
   return (
     <div className="space-y-4">
@@ -160,6 +169,56 @@ export function AIAnalysisPanel({ report, onRunAnalysis, isAnalyzing }: AIAnalys
           </p>
         </div>
       </div>
+
+      {/* Dual-Engine Consensus Verification Banner */}
+      {consensus && (
+        <div
+          className={`p-4 rounded-2xl border shadow-xs flex items-center justify-between gap-4 ${
+            consensus.consensusLevel === 'HIGH_CONSENSUS'
+              ? 'bg-gradient-to-r from-emerald-50 via-teal-50 to-white border-emerald-200'
+              : 'bg-gradient-to-r from-amber-50 via-orange-50 to-white border-amber-200'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                consensus.consensusLevel === 'HIGH_CONSENSUS'
+                  ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-200'
+                  : 'bg-amber-500/10 text-amber-600 border border-amber-200'
+              }`}
+            >
+              {consensus.consensusLevel === 'HIGH_CONSENSUS' ? (
+                <CheckCheck className="w-5 h-5" />
+              ) : (
+                <Scale className="w-5 h-5" />
+              )}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`text-[10px] font-mono font-black uppercase px-2 py-0.5 rounded-full ${
+                    consensus.consensusLevel === 'HIGH_CONSENSUS'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {consensus.consensusLevel === 'HIGH_CONSENSUS' ? 'Dual-Engine Consensus' : 'Divergence Detected'}
+                </span>
+                <span className="text-[10px] font-mono text-slate-500">
+                  Agreement Score: <strong className="text-slate-800">{consensus.consensusScore}%</strong>
+                </span>
+              </div>
+              <p className="text-xs text-slate-700 mt-1 leading-snug">{consensus.summary}</p>
+            </div>
+          </div>
+          <div className="text-right shrink-0 hidden sm:block">
+            <span className="text-[10px] font-mono text-slate-400 block">LLM vs ML Engine</span>
+            <span className="text-xs font-bold font-mono text-slate-800">
+              {consensus.llmFavoredParty} vs {consensus.mlFavoredParty}
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Left column: claim mappings + contradictions */}
@@ -253,8 +312,155 @@ export function AIAnalysisPanel({ report, onRunAnalysis, isAnalyzing }: AIAnalys
           </div>
         </div>
 
-        {/* Right column: timeline + injection defense + recommendation */}
+        {/* Right column: LLM Advisory + ML Classifier + Timeline + Defense */}
         <div className="lg:col-span-5 space-y-4">
+          {/* Generative LLM Advisory recommendation */}
+          <div className="p-5 rounded-2xl bg-[#0b132b] text-white shadow-md space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                Generative Advisory (LLM)
+              </h4>
+              <span className="text-[9px] font-mono text-slate-400 bg-white/5 px-2 py-0.5 rounded">
+                Non-Binding
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-lg font-black">
+                Favour: <span className="text-blue-400">{report.advisoryRecommendation.favoredParty}</span>
+              </span>
+              <span className="text-2xl font-black font-mono text-blue-400">
+                {report.advisoryRecommendation.confidence}%
+              </span>
+            </div>
+
+            <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-400"
+                style={{ width: `${report.advisoryRecommendation.confidence}%` }}
+              ></div>
+            </div>
+
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              {report.advisoryRecommendation.rationale}
+            </p>
+
+            {report.advisoryRecommendation.uncertaintyFactors.length > 0 && (
+              <div className="pt-2 border-t border-white/10">
+                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                  Uncertainty Factors
+                </p>
+                <ul className="space-y-1">
+                  {report.advisoryRecommendation.uncertaintyFactors.map((f, i) => (
+                    <li key={i} className="text-[10px] text-slate-400 flex items-start gap-1.5">
+                      <span className="text-amber-400 mt-0.5">•</span> {f}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          {/* Trained ML Model Prediction Card (XGBoost Champion) */}
+          {ml && (
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-950 via-slate-900 to-purple-950 text-white border border-indigo-800/40 shadow-xl space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center text-indigo-400">
+                    <Binary className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-white flex items-center gap-1.5">
+                      ML Classifier Prediction
+                      <span className="text-[9px] font-mono font-bold bg-indigo-500/30 text-indigo-300 px-1.5 py-0.2 rounded border border-indigo-500/40">
+                        {ml.modelInfo.name}
+                      </span>
+                    </h4>
+                    <p className="text-[9px] text-slate-400 font-mono">
+                      119 features • 4,000 cases trained
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/80 border border-emerald-800/60 px-2 py-0.5 rounded-full">
+                    {ml.confidence}% Conf.
+                  </span>
+                </div>
+              </div>
+
+              {/* Prediction outcome banner */}
+              <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between">
+                <div>
+                  <span className="text-[9px] text-slate-400 uppercase font-mono block">Statistical Outcome</span>
+                  <span className="text-sm font-black text-indigo-200">{ml.predictedOutcome}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[9px] text-slate-400 uppercase font-mono block">Favors Party</span>
+                  <span className="text-xs font-bold text-white bg-indigo-600/50 px-2 py-0.5 rounded">
+                    {ml.favoredParty}
+                  </span>
+                </div>
+              </div>
+
+              {/* Class Probability Distribution */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
+                  <BarChart3 className="w-3 h-3 text-indigo-400" />
+                  Probability Distribution
+                </span>
+                <div className="space-y-1">
+                  {Object.entries(ml.probabilityBreakdown).map(([label, prob]) => (
+                    <div key={label} className="space-y-0.5">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-slate-300 truncate">{label}</span>
+                        <span className="font-mono text-indigo-300">{prob}%</span>
+                      </div>
+                      <div className="h-1 rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-400"
+                          style={{ width: `${prob}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Explainability / Top Contributing Features */}
+              {ml.topReasons && ml.topReasons.length > 0 && (
+                <div className="pt-2 border-t border-white/10 space-y-1.5">
+                  <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
+                    <Layers className="w-3 h-3 text-indigo-400" />
+                    Key Decision Drivers (Explainability)
+                  </span>
+                  <div className="space-y-1">
+                    {ml.topReasons.slice(0, 3).map((r, i) => (
+                      <div
+                        key={i}
+                        className="p-1.5 rounded-lg bg-white/5 flex items-center justify-between text-[10px]"
+                      >
+                        <span className="text-slate-200">{r.displayName}</span>
+                        <span className="font-mono text-emerald-400 font-bold">
+                          +{r.contribution}% weight
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* On-Chain SHA-256 Model Integrity Badge */}
+              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[9px] font-mono text-slate-400">
+                <span className="flex items-center gap-1">
+                  <Fingerprint className="w-3 h-3 text-indigo-400" />
+                  SHA-256: {ml.modelInfo.sha256 ? `${ml.modelInfo.sha256.slice(0, 12)}…` : 'Verified'}
+                </span>
+                <span className="text-indigo-300">On-Chain Verifiable</span>
+              </div>
+            </div>
+          )}
+
           {/* Timeline */}
           <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3">
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
@@ -322,50 +528,9 @@ export function AIAnalysisPanel({ report, onRunAnalysis, isAnalyzing }: AIAnalys
               {report.promptInjectionDefense.notes}
             </p>
           </div>
-
-          {/* Advisory recommendation */}
-          <div className="p-5 rounded-2xl bg-[#0b132b] text-white shadow-md space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Advisory Recommendation (Non-Binding)
-            </h4>
-
-            <div className="flex items-center justify-between">
-              <span className="text-lg font-black">
-                Favour: <span className="text-blue-400">{report.advisoryRecommendation.favoredParty}</span>
-              </span>
-              <span className="text-2xl font-black font-mono text-blue-400">
-                {report.advisoryRecommendation.confidence}%
-              </span>
-            </div>
-
-            <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-400"
-                style={{ width: `${report.advisoryRecommendation.confidence}%` }}
-              ></div>
-            </div>
-
-            <p className="text-[11px] text-slate-300 leading-relaxed">
-              {report.advisoryRecommendation.rationale}
-            </p>
-
-            {report.advisoryRecommendation.uncertaintyFactors.length > 0 && (
-              <div className="pt-2 border-t border-white/10">
-                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                  Uncertainty Factors
-                </p>
-                <ul className="space-y-1">
-                  {report.advisoryRecommendation.uncertaintyFactors.map((f, i) => (
-                    <li key={i} className="text-[10px] text-slate-400 flex items-start gap-1.5">
-                      <span className="text-amber-400 mt-0.5">•</span> {f}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>
   );
 }
+

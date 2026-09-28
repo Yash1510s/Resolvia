@@ -34,9 +34,9 @@ export async function computeSha256Bytes(data: ArrayBuffer): Promise<string> {
 
 export function generateRandomSalt(): string {
   if (typeof window === 'undefined' || !window.crypto) {
-    return '0x8f92a104c8821034';
+    return '0x' + '00'.repeat(32);
   }
-  const array = new Uint8Array(16);
+  const array = new Uint8Array(32);
   crypto.getRandomValues(array);
   return '0x' + Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
 }

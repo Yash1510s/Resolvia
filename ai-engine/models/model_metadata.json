@@ -1,0 +1,165 @@
+{
+  "timestamp": "2026-09-28T19:17:30.339724Z",
+  "elapsed_seconds": 21.62,
+  "champion_model": "XGBoost",
+  "model_sha256": "8d6d14dd7b6015cf335e3431a2c9adc3d28446fa8a306932b845288a8e2b747b",
+  "extractor_sha256": "f0a53af1a247243d1d99fbe5f36f037a64cea93acebc6c83f48b3ed3250e7525",
+  "metrics": {
+    "test_accuracy": 0.94,
+    "test_f1_macro": 0.9285686457846345,
+    "test_f1_weighted": 0.9391653517999065,
+    "test_precision_macro": 0.9436527161441246,
+    "test_recall_macro": 0.9165372855511104,
+    "test_log_loss": 0.2664496883157843
+  },
+  "all_models_benchmark": {
+    "Random Forest": {
+      "cv_f1_macro_mean": 0.9043890162861334,
+      "cv_f1_macro_std": 0.010560741876993076,
+      "test_accuracy": 0.9125,
+      "test_f1_macro": 0.897970073690663,
+      "test_log_loss": 0.4532909806844128
+    },
+    "Gradient Boosting": {
+      "cv_f1_macro_mean": 0.9413107272646706,
+      "cv_f1_macro_std": 0.01190925508720296,
+      "test_accuracy": 0.9375,
+      "test_f1_macro": 0.9247304454381035,
+      "test_log_loss": 0.2642165196112349
+    },
+    "XGBoost": {
+      "cv_f1_macro_mean": 0.9423821755088829,
+      "cv_f1_macro_std": 0.008567223377009724,
+      "test_accuracy": 0.94,
+      "test_f1_macro": 0.9285686457846345,
+      "test_log_loss": 0.2664496883157843
+    }
+  },
+  "top_features": [
+    {
+      "rank": 1,
+      "feature": "claimant_tfidf_landlord",
+      "importance": 0.07224615663290024
+    },
+    {
+      "rank": 2,
+      "feature": "total_evidence_signals",
+      "importance": 0.06829699128866196
+    },
+    {
+      "rank": 3,
+      "feature": "has_official_record",
+      "importance": 0.06645218282938004
+    },
+    {
+      "rank": 4,
+      "feature": "cat_Community",
+      "importance": 0.052508749067783356
+    },
+    {
+      "rank": 5,
+      "feature": "evidence_count",
+      "importance": 0.04746063053607941
+    },
+    {
+      "rank": 6,
+      "feature": "cat_Workplace",
+      "importance": 0.041837047785520554
+    },
+    {
+      "rank": 7,
+      "feature": "has_written_agreement",
+      "importance": 0.039416007697582245
+    },
+    {
+      "rank": 8,
+      "feature": "has_communication_proof",
+      "importance": 0.030198704451322556
+    },
+    {
+      "rank": 9,
+      "feature": "has_timeline_proof",
+      "importance": 0.026521774008870125
+    },
+    {
+      "rank": 10,
+      "feature": "claimant_tfidf_screenshots",
+      "importance": 0.02571197785437107
+    },
+    {
+      "rank": 11,
+      "feature": "respondent_tfidf_issue",
+      "importance": 0.020490305498242378
+    },
+    {
+      "rank": 12,
+      "feature": "claimant_tfidf_received",
+      "importance": 0.020212983712553978
+    },
+    {
+      "rank": 13,
+      "feature": "claimant_tfidf_email",
+      "importance": 0.01935657486319542
+    },
+    {
+      "rank": 14,
+      "feature": "claimant_tfidf_rs",
+      "importance": 0.018564371392130852
+    },
+    {
+      "rank": 15,
+      "feature": "has_witness",
+      "importance": 0.0160483680665493
+    }
+  ],
+  "category_metrics": {
+    "Academic": {
+      "accuracy": 0.8787878787878788,
+      "f1_macro": 0.8656096903904293,
+      "sample_count": 99
+    },
+    "Community": {
+      "accuracy": 0.9504950495049505,
+      "f1_macro": 0.9384652626482692,
+      "sample_count": 101
+    },
+    "Consumer": {
+      "accuracy": 0.93,
+      "f1_macro": 0.9012472759308202,
+      "sample_count": 100
+    },
+    "Digital": {
+      "accuracy": 0.9393939393939394,
+      "f1_macro": 0.9235193464701661,
+      "sample_count": 99
+    },
+    "Freelance": {
+      "accuracy": 0.9528301886792453,
+      "f1_macro": 0.9505352213454321,
+      "sample_count": 106
+    },
+    "Personal": {
+      "accuracy": 0.9662921348314607,
+      "f1_macro": 0.9626685509038451,
+      "sample_count": 89
+    },
+    "Property": {
+      "accuracy": 0.9479166666666666,
+      "f1_macro": 0.917989417989418,
+      "sample_count": 96
+    },
+    "Workplace": {
+      "accuracy": 0.9545454545454546,
+      "f1_macro": 0.9179806580468832,
+      "sample_count": 110
+    }
+  },
+  "target_classes": {
+    "Claimant Justified": 0,
+    "Respondent Justified": 1,
+    "Compromise": 2
+  },
+  "num_train_samples": 3200,
+  "num_test_samples": 800,
+  "num_features": 119
+}

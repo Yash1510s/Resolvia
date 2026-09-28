@@ -84,6 +84,39 @@ export interface Contradiction {
   evidenceRefs: string[];
 }
 
+export interface MLReason {
+  feature: string;
+  displayName: string;
+  contribution: number;
+  value: number;
+}
+
+export interface MLPrediction {
+  predictedOutcome: string;
+  favoredParty: 'Claimant' | 'Respondent' | 'Split Settlement' | string;
+  confidence: number; // 0 - 100
+  probabilityBreakdown: Record<string, number>;
+  topReasons: MLReason[];
+  modelInfo: {
+    name: string;
+    sha256: string;
+    featureCount: number;
+    trainingSamples?: number;
+    testAccuracy?: number;
+    testF1?: number;
+  };
+}
+
+export interface ModelConsensus {
+  consensusLevel: 'HIGH_CONSENSUS' | 'DIVERGENCE_DETECTED';
+  consensusScore: number;
+  llmFavoredParty: string;
+  mlFavoredParty: string;
+  llmConfidence: number;
+  mlConfidence: number;
+  summary: string;
+}
+
 export interface AIAnalysisReport {
   reportId: string;
   caseId: string;
@@ -103,6 +136,8 @@ export interface AIAnalysisReport {
     rationale: string;
     uncertaintyFactors: string[];
   };
+  mlPrediction?: MLPrediction;
+  modelConsensus?: ModelConsensus;
   advisoryDisclaimer: string;
   reportSha256: string;
 }

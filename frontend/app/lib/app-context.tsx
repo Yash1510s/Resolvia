@@ -18,6 +18,7 @@ import { useAuth } from './auth-context';
 import { computeSha256, computeSha256Bytes, formatHash } from './crypto';
 import { anchorEvidenceOnChain, storeEvidenceContent } from './chain';
 import { jurorPseudonym } from './jury';
+import { computeVoteChoiceCommitment, generateSalt32 } from './commitment';
 
 export interface Identity {
   name: string;
@@ -569,6 +570,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (me && j.jurorId === me.jurorId) return j; // leave the user's own vote untouched
             if (j.status === 'PENDING_COMMIT' || j.status === 'COMMITTED') {
               const v = pickVote();
+              const salt = generateSalt32();
+              const commitmentHash = computeVoteChoiceCommitment(v, salt, c.id, j.walletAddress || j.jurorId);
               const reasonings = {
                 CLAIMANT_UPHELD: 'Verified on-chain evidence anchors and commit logs confirm substantial delivery.',
                 RESPONDENT_UPHELD: 'Deliverable failed agreed test criteria; counter-claim sustained.',
@@ -579,8 +582,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 status: 'REVEALED' as const,
                 revealedVote: v,
                 reasoning: reasonings[v],
-                salt: rndTx().slice(0, 22),
-                commitmentHash: '0x' + formatHash(v + j.jurorId, 64),
+                salt,
+                commitmentHash,
                 commitTimestamp: now,
                 revealTimestamp: now,
               };
@@ -629,6 +632,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               caseId: targetCase.id,
+              caseNumber: targetCase.caseNumber || targetCase.id,
+              claimantStatement: targetCase.claimSummary || targetCase.title,
+              respondentStatement: targetCase.counterClaimSummary || 'No formal counter-statement filed to date.',
+              evidenceList: targetCase.evidence.map((e) => ({
+                id: e.id,
+                title: e.title,
+                description: e.description,
+                fileName: e.fileName,
+                sha256Hash: e.sha256Hash,
+                accessTier: e.accessTier,
+              })),
+              category: targetCase.category,
+              disputeAmount: targetCase.disputeAmount,
+              // Legacy/fallback compatibility aliases
               title: targetCase.title,
               description: targetCase.claimSummary,
               claimAmount: targetCase.disputeAmount,

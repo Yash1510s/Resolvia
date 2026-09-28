@@ -410,6 +410,7 @@ export default function JurorWorkspace({ params }: { params: Promise<{ caseId: s
 
               {/* Full-width Voting Console Component */}
               <CommitRevealVoting
+                caseId={dispute.id}
                 jurors={dispute.jurors}
                 currentJurorId={myJuror!.jurorId}
                 votingDeadline={dispute.votingDeadline}

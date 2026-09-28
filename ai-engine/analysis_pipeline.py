@@ -23,6 +23,15 @@ import urllib.error
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 
+try:
+    from ml_predictor import MLPredictor, predict_dispute
+except ImportError:
+    try:
+        from .ml_predictor import MLPredictor, predict_dispute
+    except Exception:
+        MLPredictor = None
+        predict_dispute = None
+
 ADVISORY_DISCLAIMER = (
     "IMPORTANT: This AI synthesis is non-binding and advisory only. "
     "Under Section 63 of Bharatiya Sakshya Adhiniyam 2023, automated outputs "
@@ -83,7 +92,7 @@ class EvidenceAnalyzer:
         ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
         if gemini_key:
-            return {
+            res = {
                 "available": True,
                 "provider": "Google Gemini",
                 "model": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
@@ -91,7 +100,7 @@ class EvidenceAnalyzer:
                 "promptDefense": "ACTIVE"
             }
         elif openai_key:
-            return {
+            res = {
                 "available": True,
                 "provider": "OpenAI Compatible",
                 "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
@@ -99,7 +108,7 @@ class EvidenceAnalyzer:
                 "promptDefense": "ACTIVE"
             }
         elif cls._check_ollama_alive(ollama_host):
-            return {
+            res = {
                 "available": True,
                 "provider": "Local Ollama",
                 "model": os.environ.get("OLLAMA_MODEL", "llama3"),
@@ -107,13 +116,32 @@ class EvidenceAnalyzer:
                 "promptDefense": "ACTIVE"
             }
         else:
-            return {
+            res = {
                 "available": True,
                 "provider": "Resolvia Dynamic NLP Engine",
                 "model": "Resolvia-Dynamic-NLP-v2.1 (Deterministic Fallback)",
                 "mode": "DETERMINISTIC_HEURISTIC",
                 "promptDefense": "ACTIVE"
             }
+
+        # Query ML Model Engine status
+        ml_status = {"available": False}
+        if MLPredictor:
+            try:
+                predictor = MLPredictor()
+                if predictor.is_available:
+                    ml_status = {
+                        "available": True,
+                        "model": predictor.champion_name,
+                        "sha256": predictor.model_sha256,
+                        "featureCount": len(predictor.feature_names),
+                        "testAccuracy": predictor.metadata.get("metrics", {}).get("test_accuracy", 0),
+                        "testF1": predictor.metadata.get("metrics", {}).get("test_f1_macro", 0),
+                    }
+            except Exception:
+                pass
+        res["mlEngine"] = ml_status
+        return res
 
     @staticmethod
     def _check_ollama_alive(host: str) -> bool:
@@ -131,7 +159,9 @@ class EvidenceAnalyzer:
         case_number: str,
         claimant_statement: str,
         respondent_statement: str,
-        evidence_list: List[Dict[str, Any]]
+        evidence_list: List[Dict[str, Any]],
+        category: str = "Personal",
+        dispute_amount: float = 0.0,
     ) -> Dict[str, Any]:
         # 1. OWASP Prompt Defense Inspection
         combined_text = f"{claimant_statement} {respondent_statement} " + " ".join([e.get("description", "") for e in evidence_list])
@@ -160,7 +190,73 @@ class EvidenceAnalyzer:
                 case_id, case_number, claimant_statement, respondent_statement, evidence_list
             )
 
-        # 3. Assemble canonical report payload
+        # 3. Deterministic ML Champion Inference (XGBoost)
+        ml_prediction = None
+        if predict_dispute:
+            try:
+                ml_prediction = predict_dispute(
+                    claimant_statement=claimant_statement,
+                    respondent_statement=respondent_statement,
+                    category=category,
+                    evidence_list=evidence_list,
+                    dispute_amount=float(dispute_amount or 0.0),
+                )
+            except Exception as e:
+                print(f"[AI-Engine] ML inference error: {e}")
+
+        # 4. Multi-Engine Agreement & Consensus Score
+        advisory_rec = report_data.get("advisoryRecommendation", {
+            "favoredParty": "Split Settlement",
+            "confidence": 60,
+            "rationale": "Sufficient evidence exists on both sides to warrant a balanced resolution.",
+            "uncertaintyFactors": ["Informal communications lack timestamped cryptographic verification."]
+        })
+
+        model_consensus = None
+        if ml_prediction:
+            llm_favored = str(advisory_rec.get("favoredParty", "")).strip().lower()
+            ml_favored = str(ml_prediction.get("favoredParty", "")).strip().lower()
+
+            # Normalization check
+            party_match = (
+                (llm_favored == ml_favored) or
+                ("claimant" in llm_favored and "claimant" in ml_favored) or
+                ("respondent" in llm_favored and "respondent" in ml_favored) or
+                ("split" in llm_favored and "split" in ml_favored) or
+                ("compromise" in llm_favored and "compromise" in ml_favored)
+            )
+
+            llm_conf = float(advisory_rec.get("confidence", 50))
+            ml_conf = float(ml_prediction.get("confidence", 50))
+
+            if party_match:
+                consensus_level = "HIGH_CONSENSUS"
+                consensus_score = round(min(100.0, (llm_conf + ml_conf) / 2.0 + 10.0), 1)
+                consensus_summary = (
+                    f"Strong agreement: Both Generative Advisory ({advisory_rec.get('favoredParty')}) "
+                    f"and {ml_prediction.get('modelInfo', {}).get('name', 'ML')} Classifier "
+                    f"({ml_prediction.get('favoredParty')}) independently converge on the same disposition."
+                )
+            else:
+                consensus_level = "DIVERGENCE_DETECTED"
+                consensus_score = round(max(20.0, 100.0 - abs(llm_conf - ml_conf)), 1)
+                consensus_summary = (
+                    f"Model divergence: Generative advisory favors {advisory_rec.get('favoredParty')} "
+                    f"while {ml_prediction.get('modelInfo', {}).get('name', 'ML')} predicts "
+                    f"{ml_prediction.get('favoredParty')}. Human juror panel review is critically advised."
+                )
+
+            model_consensus = {
+                "consensusLevel": consensus_level,
+                "consensusScore": consensus_score,
+                "llmFavoredParty": advisory_rec.get("favoredParty"),
+                "mlFavoredParty": ml_prediction.get("favoredParty"),
+                "llmConfidence": llm_conf,
+                "mlConfidence": ml_conf,
+                "summary": consensus_summary,
+            }
+
+        # 5. Assemble canonical report payload
         report_payload = {
             "reportId": f"AIR-{case_number}-GEN",
             "caseId": case_id,
@@ -170,16 +266,13 @@ class EvidenceAnalyzer:
             "claimMappings": report_data.get("claimMappings", []),
             "timeline": report_data.get("timeline", []),
             "contradictions": report_data.get("contradictions", []),
-            "advisoryRecommendation": report_data.get("advisoryRecommendation", {
-                "favoredParty": "Split Settlement",
-                "confidence": 60,
-                "rationale": "Sufficient evidence exists on both sides to warrant a balanced resolution.",
-                "uncertaintyFactors": ["Informal communications lack timestamped cryptographic verification."]
-            }),
+            "advisoryRecommendation": advisory_rec,
+            "mlPrediction": ml_prediction,
+            "modelConsensus": model_consensus,
             "advisoryDisclaimer": ADVISORY_DISCLAIMER,
         }
 
-        # 4. Canonical cryptographic SHA-256 fingerprint
+        # 6. Canonical cryptographic SHA-256 fingerprint
         canonical_str = json.dumps(report_payload, sort_keys=True)
         report_payload["reportSha256"] = hashlib.sha256(canonical_str.encode("utf-8")).hexdigest()
         return report_payload

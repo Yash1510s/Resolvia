@@ -519,6 +519,7 @@ function VotingSection({ dispute, myJuror, myRole }: { dispute: DisputeCase; myJ
 
   return (
     <CommitRevealVoting
+      caseId={dispute.id}
       jurors={dispute.jurors}
       currentJurorId={myJuror.jurorId}
       votingDeadline={dispute.votingDeadline}

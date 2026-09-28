@@ -48,13 +48,41 @@ OTP_REQUEST_COOLDOWN = 60  # seconds between requests for the same email
 
 # ── Secrets (master key for wallet encryption + JWT signing) ────────────────
 
+def _parse_master_key(raw_key: str) -> bytes:
+    clean = raw_key.strip()
+    if clean.startswith("0x") or clean.startswith("0X"):
+        clean = clean[2:]
+    if len(clean) == 64 and all(c in "0123456789abcdefABCDEF" for c in clean):
+        return bytes.fromhex(clean)
+    import hashlib
+    return hashlib.sha256(clean.encode("utf-8")).digest()
+
+
 def _ensure_secrets() -> dict:
     env_master = os.environ.get("RESOLVIA_MASTER_KEY")
     env_jwt = os.environ.get("RESOLVIA_JWT_SECRET")
+    is_prod = APP_ENV.lower() in ("production", "prod")
+
+    if is_prod:
+        if not env_master or not env_jwt:
+            raise RuntimeError(
+                "CRITICAL SECURITY CONFIGURATION ERROR: In production mode, "
+                "RESOLVIA_MASTER_KEY (32-byte AES key) and RESOLVIA_JWT_SECRET (>=32 chars) "
+                "must be explicitly set via environment variables."
+            )
+        if len(env_jwt.strip()) < 32:
+            raise RuntimeError(
+                "CRITICAL SECURITY CONFIGURATION ERROR: RESOLVIA_JWT_SECRET must be at least 32 characters in production."
+            )
+        return {
+            "master_key": env_master.strip(),
+            "jwt_secret": env_jwt.strip(),
+        }
+
     if env_master and env_jwt:
         return {
-            "master_key": env_master,
-            "jwt_secret": env_jwt,
+            "master_key": env_master.strip(),
+            "jwt_secret": env_jwt.strip(),
         }
 
     os.makedirs(SECRET_DIR, exist_ok=True)
@@ -72,11 +100,12 @@ def _ensure_secrets() -> dict:
         os.chmod(path, 0o600)
     except Exception:
         pass
+    print(f"[Auth] Loaded local development secrets from {path} (APP_ENV={APP_ENV})")
     return secrets_data
 
 
 _SECRETS = _ensure_secrets()
-MASTER_KEY = bytes.fromhex(_SECRETS["master_key"])
+MASTER_KEY = _parse_master_key(_SECRETS["master_key"])
 JWT_SECRET = _SECRETS["jwt_secret"]
 
 
@@ -656,7 +685,10 @@ def evidence_verify(sha256: str, caseId: Optional[int] = None):
         raise HTTPException(status_code=503, detail=f"Chain read failed: {e}")
 
 # ── App-state sync (per-user persistence) ─────────────────────────────────────
-import state_store
+try:
+    from backend import state_store
+except ImportError:
+    import state_store
 
 
 class StateIn(BaseModel):
