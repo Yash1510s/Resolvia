@@ -134,9 +134,21 @@ export function EvidenceLocker({ evidence, caseId, onAddEvidenceClick, onUploadF
                     {formatHash(ev.sha256Hash, 20)}
                   </span>
                 </div>
-                <div className="flex items-center gap-2 text-[10px] font-mono">
-                  <span className="text-slate-400 w-8 shrink-0">IPFS</span>
-                  <span className="text-slate-600">{ev.ipfsCid ? `CID ${formatHash(ev.ipfsCid, 20)}` : 'pending pin'}</span>
+                <div className="flex items-center justify-between text-[10px] font-mono">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-slate-400 w-8 shrink-0">IPFS</span>
+                    <span className="text-slate-600 truncate">{ev.ipfsCid ? `CID ${formatHash(ev.ipfsCid, 20)}` : 'pending pin'}</span>
+                  </div>
+                  {ev.ipfsCid && (
+                    <a
+                      href={`https://gateway.pinata.cloud/ipfs/${ev.ipfsCid}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-violet-600 hover:text-violet-800 underline text-[9.5px] ml-2 shrink-0"
+                    >
+                      Gateway ↗
+                    </a>
+                  )}
                 </div>
                 {ev.onChainAnchored && ev.onChainTx && (
                   <div className="flex items-center gap-2 text-[10px] font-mono">

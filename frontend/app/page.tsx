@@ -7,11 +7,13 @@ import { useAuth } from './lib/auth-context';
 import { LandingPage } from './components/LandingPage';
 import { AuthModal } from './components/AuthModal';
 import { PublicNav } from './components/PublicNav';
+import { LiveExampleModal } from './components/LiveExampleModal';
 
 export default function Root() {
   const router = useRouter();
   const { user: authUser, logout: authLogout } = useAuth();
   const [authOpen, setAuthOpen] = useState(false);
+  const [demoOpen, setDemoOpen] = useState(false);
 
   // ?signin=1 -> open sign-in modal
   useEffect(() => {
@@ -27,7 +29,7 @@ export default function Root() {
   };
 
   const watchDemo = () => {
-    router.push('/cases/case-084');
+    setDemoOpen(true);
   };
 
   const openWizard = () => {
@@ -55,6 +57,7 @@ export default function Root() {
       </div>
 
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
+      <LiveExampleModal open={demoOpen} onClose={() => setDemoOpen(false)} />
     </div>
   );
 }

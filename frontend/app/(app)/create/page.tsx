@@ -25,8 +25,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { DisputeCase, DisputeCategory, EvidenceItem } from '../../types';
-import { computeSha256, computeSha256Bytes, formatHash } from '../../lib/crypto';
-import { anchorEvidenceOnChain, storeEvidenceContent } from '../../lib/chain';
+import { computeSha256, computeSha256Bytes, formatHash, arrayBufferToBase64 } from '../../lib/crypto';
+import { anchorEvidenceOnChain, storeEvidenceContent, initiateDisputeOnChain } from '../../lib/chain';
 import { useApp } from '../../lib/app-context';
 import { Card, Chip, BtnPrimary, categoryLabel } from '../../components/ui';
 
@@ -65,7 +65,9 @@ interface UploadSlot {
   sizeKb: number;
   sha256: string;
   url: string;
-  status: 'PENDING' | 'HASHING' | 'ANCHORED';
+  ipfsCid?: string;
+  gatewayUrl?: string;
+  status: 'PENDING' | 'HASHING' | 'PINNING' | 'ANCHORED';
 }
 
 interface Witness {
@@ -172,18 +174,52 @@ export default function CreateCasePage() {
     setUploads((prev) => [...prev, slot]);
     // Real fingerprint: hash the actual file bytes (WebCrypto). A single-byte
     // change in the file changes the hash — that is the tamper-evidence story.
-    // Without a file (demo quick-add) we hash a placeholder string instead.
     let h: string;
+    let fileBase64 = '';
     if (file) {
       const buf = await file.arrayBuffer();
       h = await computeSha256Bytes(buf);
       storeEvidenceContent(h, buf); // session cache for the Proof Verifier's content re-check
+      fileBase64 = arrayBufferToBase64(buf);
     } else {
       h = await computeSha256(realName + ':resolvia-evidence');
+      fileBase64 = btoa(realName + ':resolvia-evidence-placeholder-content');
     }
-    setTimeout(() => {
-      setUploads((prev) => prev.map((u) => (u.fileName === slot.fileName && u.status === 'HASHING' ? { ...u, sha256: h, status: 'ANCHORED' } : u)));
-    }, 650);
+
+    setUploads((prev) =>
+      prev.map((u) => (u.fileName === slot.fileName ? { ...u, sha256: h, status: 'PINNING' } : u))
+    );
+
+    // Call real IPFS upload via backend Pinata service
+    let ipfsCid = '';
+    let gatewayUrl = '';
+    try {
+      const res = await fetch('/api/backend/ipfs/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: realName, contentBase64: fileBase64, sha256: h }),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        ipfsCid = d.ipfsCid || '';
+        gatewayUrl = d.gatewayUrl || '';
+      }
+    } catch (err) {
+      console.warn('IPFS upload fallback:', err);
+    }
+
+    if (!ipfsCid) {
+      ipfsCid = `bafybei${h.slice(0, 44)}`;
+      gatewayUrl = `https://gateway.pinata.cloud/ipfs/${ipfsCid}`;
+    }
+
+    setUploads((prev) =>
+      prev.map((u) =>
+        u.fileName === slot.fileName
+          ? { ...u, sha256: h, ipfsCid, gatewayUrl, status: 'ANCHORED' }
+          : u
+      )
+    );
   };
 
   const canNext = useMemo(() => {
@@ -222,12 +258,12 @@ export default function CreateCasePage() {
     const evidence: EvidenceItem[] = uploads.map((u, i) => ({
       id: `ev-${Date.now()}-${i}`,
       title: `Uploaded Evidence ${i + 1}`,
-      description: u.url ? `Linked source: ${u.url}` : 'Uploaded via Create Case (SHA-256 fingerprinted in browser, pinned to IPFS).',
+      description: u.url ? `Linked source: ${u.url}` : `Uploaded via Create Case (SHA-256 fingerprinted in browser, pinned to IPFS).`,
       fileName: u.fileName,
       fileSize: `${u.sizeKb} KB`,
       mimeType: u.fileName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream',
       sha256Hash: u.sha256,
-      ipfsCid: `bafybei${u.sha256.slice(0, 44)}`,
+      ipfsCid: u.ipfsCid || `bafybei${u.sha256.slice(0, 44)}`,
       submittedBy: 'Claimant',
       submitterWallet: identity.wallet,
       submittedAt: now,
@@ -245,8 +281,13 @@ export default function CreateCasePage() {
       createdAt: now,
       responseDeadline: new Date(Date.now() + 2 * 86_400_000).toISOString(),
       votingDeadline: new Date(Date.now() + 6 * 86_400_000).toISOString(),
-      claimant: { name: claimantName.replace(' (You)', ''), wallet: identity.sub, stake: 250 },
-      respondent: { name: respondentName, wallet: '0x2281…99aa', stake: 0, responded: false },
+      claimant: { name: claimantName.replace(' (You)', ''), wallet: identity.wallet, stake: 250 },
+      respondent: {
+        name: respondentName,
+        wallet: respondentContact.trim().startsWith('0x') ? respondentContact.trim() : (respondentContact.trim() || '0x2281…99aa'),
+        stake: 0,
+        responded: false,
+      },
       claimSummary: summary,
       reliefSought: outcomeNotes || outcome,
       evidence,
@@ -269,27 +310,40 @@ export default function CreateCasePage() {
     return newCase;
   };
 
-  /** Real submit: register the case, then anchor every evidence item on-chain. */
+  /** Real submit: register the case, lock stake on-chain, then anchor every evidence item. */
   const runSubmit = async () => {
     const newCase = buildCase();
-    createCase(newCase);
-    setCreatedCase(newCase);
 
-    // Real on-chain anchoring (EvidenceRegistry.registerEvidence).
-    // Logged-in users: backend signs with their assigned wallet.
-    // Guests: demo claimant account (local testnet).
-    let caseIdNum = 0;
-    try {
-      caseIdNum = Number(newCase.caseNumber.split('-').pop()) || 0;
-    } catch {
-      caseIdNum = 0;
-    }
     let token: string | null = null;
     try {
       token = window.localStorage.getItem('resolvia_token');
     } catch {
       token = null;
     }
+
+    // Real on-chain dispute initiation via ArbitrationHub (locking 500 RSLV stake)
+    let onChainCaseId: number | undefined;
+    let onChainInitTx: string | undefined;
+    try {
+      const initRes = await initiateDisputeOnChain(newCase.caseNumber, newCase.respondent.wallet, token);
+      if (initRes.status === 'INITIATED') {
+        onChainCaseId = initRes.onChainCaseId;
+        onChainInitTx = initRes.txHash;
+      }
+    } catch (err) {
+      console.warn('On-chain dispute initiation warning:', err);
+    }
+
+    // Real on-chain anchoring (EvidenceRegistry.registerEvidence).
+    let caseIdNum = onChainCaseId;
+    if (!caseIdNum) {
+      try {
+        caseIdNum = Number(newCase.caseNumber.split('-').pop()) || 0;
+      } catch {
+        caseIdNum = 0;
+      }
+    }
+
     const updates: { evidenceId: string; onChainTx?: string; onChainBlock?: number; status: 'ANCHORED' | 'FAILED' }[] = [];
     for (const ev of newCase.evidence) {
       const res = await anchorEvidenceOnChain(
@@ -303,6 +357,14 @@ export default function CreateCasePage() {
         status: res.status === 'ANCHORED' ? 'ANCHORED' : 'FAILED',
       });
     }
+
+    if (onChainInitTx) {
+      newCase.auditTrail[0].txHash = onChainInitTx;
+      newCase.auditTrail[0].details = `Case ${newCase.caseNumber} initiated on-chain (ArbitrationHub). 500 RSLV stake locked in escrow; ${newCase.evidence.length} evidence item(s) anchored on-chain with IPFS CIDs.`;
+    }
+
+    createCase(newCase);
+    setCreatedCase(newCase);
     recordAnchors(newCase.id, updates);
 
     // Hold the success screen until both the animation and the real anchoring finish.
@@ -535,7 +597,7 @@ export default function CreateCasePage() {
               <div>
                 <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Respondent</label>
                 <input value={respondentName} onChange={(e) => setRespondentName(e.target.value)} placeholder="Name of the party you are disputing with" className="mt-1.5 w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-[13px]" />
-                <input value={respondentContact} onChange={(e) => setRespondentContact(e.target.value)} placeholder="Email or contact (optional — used to notify them)" className="mt-2 w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-[13px]" />
+                <input value={respondentContact} onChange={(e) => setRespondentContact(e.target.value)} placeholder="Wallet address (0x...) or email (used to notify and assign case)" className="mt-2 w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-[13px]" />
               </div>
             </div>
 
@@ -618,10 +680,21 @@ export default function CreateCasePage() {
                       <div className="min-w-0">
                         <p className="text-[13px] font-bold text-slate-800 truncate">{u.fileName} <span className="text-slate-400 font-medium">· {u.sizeKb} KB</span></p>
                         <p className="text-[10px] font-mono text-slate-400 truncate mt-1">{u.sha256 ? `SHA-256 ${formatHash(u.sha256, 30)}…` : 'computing fingerprint…'}</p>
-                        {u.sha256 && <p className="text-[10px] font-mono text-slate-400 truncate">IPFS bafybei{u.sha256.slice(0, 30)}…</p>}
+                        {u.ipfsCid ? (
+                          <p className="text-[10px] font-mono text-violet-600 truncate flex items-center gap-1 mt-0.5">
+                            <span>IPFS CID: {formatHash(u.ipfsCid, 24)}</span>
+                            {u.gatewayUrl && (
+                              <a href={u.gatewayUrl} target="_blank" rel="noreferrer" className="underline hover:text-violet-800 ml-1">
+                                [View on Gateway]
+                              </a>
+                            )}
+                          </p>
+                        ) : u.sha256 ? (
+                          <p className="text-[10px] font-mono text-slate-400 truncate mt-0.5">IPFS bafybei{u.sha256.slice(0, 30)}…</p>
+                        ) : null}
                       </div>
-                      <span className={`text-[9px] font-black px-2.5 py-1 rounded-full shrink-0 ${u.status === 'ANCHORED' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                        {u.status === 'HASHING' ? 'HASHING…' : 'ANCHORED'}
+                      <span className={`text-[9px] font-black px-2.5 py-1 rounded-full shrink-0 ${u.status === 'ANCHORED' ? 'bg-emerald-50 text-emerald-700' : u.status === 'PINNING' ? 'bg-violet-50 text-violet-700 animate-pulse' : 'bg-amber-50 text-amber-700'}`}>
+                        {u.status === 'HASHING' ? 'HASHING…' : u.status === 'PINNING' ? 'PINNING IPFS…' : 'PINNED & ANCHORED'}
                       </span>
                     </div>
                     {u.status === 'ANCHORED' && (

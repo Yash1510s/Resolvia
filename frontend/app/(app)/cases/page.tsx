@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -65,6 +65,11 @@ function MyCases() {
   const [fStatus, setFStatus] = useState('ALL');
   const [fCategory, setFCategory] = useState('ALL');
   const [fSearch, setFSearch] = useState('');
+  const [now, setNow] = useState(0);
+
+  useEffect(() => {
+    setNow(Date.now());
+  }, []);
 
   const search = searchParams.get('search') || '';
 
@@ -112,10 +117,10 @@ function MyCases() {
 
   const deadlineFor = (c: DisputeCase) => {
     if (isClosed(c)) return { icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />, top: 'Resolved on', sub: fmtDate(c.caseStudy?.closedAt || c.verdictOutcome?.finalizedAt || c.createdAt) };
-    const vd = new Date(c.votingDeadline).getTime() - Date.now();
+    const vd = now ? new Date(c.votingDeadline).getTime() - now : 0;
     if (c.status === 'EVIDENCE_LOCKED') return { icon: <Calendar className="w-4 h-4 text-slate-400" />, top: 'Submit evidence by', sub: fmtDate(c.responseDeadline) };
     if (c.status === 'AI_ANALYSIS') return { icon: <Clock className="w-4 h-4 text-amber-500" />, top: 'AI analysis in progress', sub: 'est. 1 day' };
-    if (vd > 0 && vd < 172_800_000) return { icon: <Clock className="w-4 h-4 text-rose-500" />, top: 'Voting ends in', sub: `${Math.max(1, Math.floor(vd / 3_600_000))}h ${Math.floor((vd % 3_600_000) / 60_000)}m`, urgent: true };
+    if (now && vd > 0 && vd < 172_800_000) return { icon: <Clock className="w-4 h-4 text-rose-500" />, top: 'Voting ends in', sub: `${Math.max(1, Math.floor(vd / 3_600_000))}h ${Math.floor((vd % 3_600_000) / 60_000)}m`, urgent: true };
     return { icon: <Clock className="w-4 h-4 text-slate-400" />, top: 'Voting deadline', sub: fmtDate(c.votingDeadline) };
   };
 

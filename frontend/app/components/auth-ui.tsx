@@ -227,14 +227,35 @@ export function useGoogle(onCredential: (c: string) => void) {
   return { ref, ready, enabled: Boolean(clientId) };
 }
 
+/* ─────────────────────────── GitHub OAuth hook ─────────────────────────── */
+
+export function useGitHub() {
+  const clientId = process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID || '';
+  const enabled = Boolean(clientId);
+
+  const login = () => {
+    if (!clientId) return;
+    const redirectUri = `${window.location.origin}/auth/github/callback`;
+    const scope = 'read:user user:email';
+    const url = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}`;
+    window.location.href = url;
+  };
+
+  return { enabled, login };
+}
+
 export function SocialRow({
   googleRef,
   googleReady,
   googleEnabled,
+  githubEnabled,
+  onGithubClick,
 }: {
   googleRef: React.RefObject<HTMLDivElement | null>;
   googleReady: boolean;
   googleEnabled: boolean;
+  githubEnabled?: boolean;
+  onGithubClick?: () => void;
 }) {
   return (
     <div>
@@ -264,12 +285,24 @@ export function SocialRow({
             </div>
           )}
         </div>
-        <div
-          className="h-10 px-3 rounded-full border border-slate-200 bg-slate-50 text-slate-400 text-[11px] font-bold flex items-center justify-center gap-1.5"
-          title="Protocol roadmap"
-        >
-          <GithubIcon className="w-3.5 h-3.5" /> Coming Soon
-        </div>
+        {githubEnabled ? (
+          <button
+            type="button"
+            onClick={onGithubClick}
+            className="h-10 px-3 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all hover:border-slate-400 hover:shadow-sm"
+            title="Continue with GitHub"
+          >
+            <GithubIcon className="w-4 h-4" />
+            GitHub
+          </button>
+        ) : (
+          <div
+            className="h-10 px-3 rounded-full border border-slate-200 bg-slate-50 text-slate-400 text-[11px] font-bold flex items-center justify-center gap-1.5"
+            title="Configure NEXT_PUBLIC_GITHUB_CLIENT_ID to enable"
+          >
+            <GithubIcon className="w-3.5 h-3.5" /> Coming Soon
+          </div>
+        )}
         <div
           className="h-10 px-3 rounded-full border border-slate-200 bg-slate-50 text-slate-400 text-[11px] font-bold flex items-center justify-center gap-1.5"
           title="Protocol roadmap"

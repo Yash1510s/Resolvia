@@ -102,7 +102,7 @@ export function Card({ children, className = '', onClick }: { children: React.Re
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-2xl border border-slate-200 shadow-[0_1px_2px_rgba(15,23,42,0.04)] ${onClick ? 'cursor-pointer hover:border-violet-300 transition-colors' : ''} ${className}`}
+      className={`bg-white dark:bg-slate-900/90 rounded-2xl border border-slate-200 dark:border-white/10 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-xl text-slate-900 dark:text-slate-100 ${onClick ? 'cursor-pointer hover:border-violet-300 dark:hover:border-violet-500/40 transition-colors' : ''} ${className}`}
     >
       {children}
     </div>
@@ -113,8 +113,8 @@ export function PageHead({ title, subtitle, right }: { title: string; subtitle?:
   return (
     <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
       <div>
-        <h1 className="text-2xl font-black text-slate-900 tracking-tight">{title}</h1>
-        {subtitle && <p className="text-[13px] text-slate-500 mt-1 max-w-2xl">{subtitle}</p>}
+        <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">{title}</h1>
+        {subtitle && <p className="text-[13px] text-slate-600 dark:text-slate-400 mt-1 max-w-2xl">{subtitle}</p>}
       </div>
       {right}
     </div>
@@ -124,14 +124,14 @@ export function PageHead({ title, subtitle, right }: { title: string; subtitle?:
 export function SectionHead({ title, action }: { title: string; action?: { label: string; href?: string; onClick?: () => void } }) {
   return (
     <div className="flex items-center justify-between mb-3">
-      <h2 className="text-[15px] font-black text-slate-900">{title}</h2>
+      <h2 className="text-[15px] font-black text-slate-900 dark:text-white">{title}</h2>
       {action &&
         (action.href ? (
-          <Link href={action.href} className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700">
+          <Link href={action.href} className="flex items-center gap-1 text-[11px] font-bold text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300">
             {action.label} <ArrowRight className="w-3 h-3" />
           </Link>
         ) : (
-          <button onClick={action.onClick} className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700">
+          <button onClick={action.onClick} className="flex items-center gap-1 text-[11px] font-bold text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300">
             {action.label} <ArrowRight className="w-3 h-3" />
           </button>
         ))}

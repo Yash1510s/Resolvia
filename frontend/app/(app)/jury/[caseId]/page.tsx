@@ -63,6 +63,7 @@ export default function JurorWorkspace({ params }: { params: Promise<{ caseId: s
   const [expanded, setExpanded] = useState(false);
   const [evFilter, setEvFilter] = useState<'ALL' | 'Claimant' | 'Respondent'>('ALL');
   const [delText, setDelText] = useState('');
+  const [analyzed, setAnalyzed] = useState(false);
 
   const tags = useMemo(() => {
     if (!dispute) return [];
@@ -84,7 +85,6 @@ export default function JurorWorkspace({ params }: { params: Promise<{ caseId: s
   const isMyCase = dispute.myRole === 'JUROR';
   const myJuror = isMyCase ? dispute.jurors.find((j) => j.walletAddress === identity.wallet) || dispute.jurors[0] : undefined;
   const voted = myJuror?.status === 'REVEALED';
-  const [analyzed, setAnalyzed] = useState(false);
   const step = voted || myJuror?.status === 'COMMITTED' ? 3 : analyzed ? 2 : 1;
   const cat = categoryLabel(dispute.category);
   const evAll = dispute.evidence;

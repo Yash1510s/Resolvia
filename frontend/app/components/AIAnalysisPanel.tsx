@@ -25,21 +25,26 @@ interface AIAnalysisPanelProps {
   report: AIAnalysisReport | null;
   onRunAnalysis: () => void;
   isAnalyzing: boolean;
+  activeStage?: number;
+  stageDetail?: string;
 }
 
-export function AIAnalysisPanel({ report, onRunAnalysis, isAnalyzing }: AIAnalysisPanelProps) {
-  const [activeStep, setActiveStep] = React.useState(0);
+export function AIAnalysisPanel({ report, onRunAnalysis, isAnalyzing, activeStage, stageDetail }: AIAnalysisPanelProps) {
+  const [internalStep, setInternalStep] = React.useState(0);
+  const activeStep = activeStage != null ? activeStage : internalStep;
 
   React.useEffect(() => {
     if (!isAnalyzing) {
-      setActiveStep(0);
+      setInternalStep(0);
       return;
     }
-    const interval = setInterval(() => {
-      setActiveStep((prev) => (prev < 3 ? prev + 1 : prev));
-    }, 700);
-    return () => clearInterval(interval);
-  }, [isAnalyzing]);
+    if (activeStage == null) {
+      const interval = setInterval(() => {
+        setInternalStep((prev) => (prev < 3 ? prev + 1 : prev));
+      }, 900);
+      return () => clearInterval(interval);
+    }
+  }, [isAnalyzing, activeStage]);
 
   if (isAnalyzing) {
     const steps = [
@@ -101,7 +106,7 @@ export function AIAnalysisPanel({ report, onRunAnalysis, isAnalyzing }: AIAnalys
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-bold text-white">{st.label}</p>
-                  <p className="text-[10px] text-slate-400 truncate">{st.detail}</p>
+                  <p className="text-[10px] text-slate-400 truncate">{isCurrent && stageDetail ? stageDetail : st.detail}</p>
                 </div>
                 {isCurrent && (
                   <span className="text-[10px] font-bold text-violet-300 animate-pulse uppercase tracking-wider shrink-0">

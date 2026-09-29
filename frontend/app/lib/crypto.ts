@@ -77,3 +77,14 @@ export function formatDateSafe(isoString: string): string {
   const m = isoString.match(/\d{4}-\d{2}-\d{2}/);
   return m ? m[0] : isoString;
 }
+
+export function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  return btoa(binary);
+}

@@ -24,7 +24,7 @@ export function VerificationPortal({ cases }: VerificationPortalProps) {
   const [input, setInput] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [result, setResult] = useState<{
-    status: 'VALID' | 'MISMATCH' | 'NOT_FOUND' | 'EMPTY';
+    status: 'VALID' | 'MISMATCH' | 'UNANCHORED' | 'NOT_FOUND' | 'EMPTY';
     hash?: string;
     evidenceName?: string;
     caseNumber?: string;
@@ -77,20 +77,29 @@ export function VerificationPortal({ cases }: VerificationPortalProps) {
       parts.push(
         anchored
           ? `On-chain: ANCHORED in EvidenceRegistry — tx ${chain.matches?.[0]?.txHash || '—'}, block #${chain.matches?.[0]?.blockNumber ?? '—'}.`
-          : 'On-chain: Genesis record verified against platform merkle root; dispute assets anchored to protocol registry.'
+          : ctx
+          ? 'On-chain: NOT FOUND in EvidenceRegistry. This item exists in workspace session storage only and has not been confirmed on-chain.'
+          : 'On-chain: NOT ANCHORED — no transaction receipt or smart contract event found for this hash.'
       );
       if (contentCheck === 'MATCH') parts.push('Content: re-computed SHA-256 of the original bytes matches the fingerprint.');
       if (contentCheck === 'MISMATCH') parts.push('Content: re-computed SHA-256 does NOT match — the bytes were altered after filing.');
-      if (contentCheck === 'UNAVAILABLE') parts.push('Content: original cryptographic signature verified against ledger root — the on-chain record is authoritative.');
+      if (contentCheck === 'UNAVAILABLE') parts.push('Content: original file bytes not cached in current session; byte-level comparison unavailable.');
       if (ctx) parts.push(`Record: "${ctx.name}" in case ${ctx.caseNumber}.`);
+
+      let status: 'VALID' | 'MISMATCH' | 'UNANCHORED' | 'NOT_FOUND';
+      if (mismatch) status = 'MISMATCH';
+      else if (anchored) status = 'VALID';
+      else if (ctx) status = 'UNANCHORED';
+      else status = 'NOT_FOUND';
+
       setResult({
-        status: mismatch ? 'MISMATCH' : anchored || ctx ? 'VALID' : 'NOT_FOUND',
+        status,
         hash: full,
         evidenceName: ctx?.name,
         caseNumber: ctx?.caseNumber,
         blockNumber: chain.matches?.[0]?.blockNumber,
         details: parts.join(' '),
-        onChain: chain.status === 'ANCHORED' ? 'ANCHORED' : chain.status === 'NOT_FOUND' ? 'NOT_FOUND' : 'UNKNOWN',
+        onChain: chain.status === 'ANCHORED' ? 'ANCHORED' : 'NOT_FOUND',
         onChainTx: chain.matches?.[0]?.txHash,
         contentCheck,
       });
@@ -108,18 +117,19 @@ export function VerificationPortal({ cases }: VerificationPortalProps) {
       };
       if (first) chain = await verifyEvidenceOnChain(first.sha256Hash);
       const anchoredCount = caseMatch.evidence.filter((e) => e.onChainAnchored).length;
+      const isAnchored = chain.status === 'ANCHORED';
       setResult({
-        status: 'VALID',
+        status: isAnchored ? 'VALID' : 'UNANCHORED',
         hash: first?.sha256Hash,
         evidenceName: first?.fileName,
         caseNumber: caseMatch.caseNumber,
         blockNumber: chain.matches?.[0]?.blockNumber,
         details:
-          `${caseMatch.caseNumber} — ${caseMatch.evidence.length} evidence item(s), ${anchoredCount} marked anchored at filing, ${caseMatch.auditTrail.length} audit events. ` +
-          (chain.status === 'ANCHORED'
-            ? `On-chain check of first item: ANCHORED (tx ${chain.matches?.[0]?.txHash || '—'}).`
-            : 'On-chain check of first item: Genesis record verified against platform merkle root.'),
-        onChain: chain.status === 'ANCHORED' ? 'ANCHORED' : chain.status === 'NOT_FOUND' ? 'NOT_FOUND' : 'UNKNOWN',
+          `${caseMatch.caseNumber} — ${caseMatch.evidence.length} evidence item(s), ${anchoredCount} marked anchored, ${caseMatch.auditTrail.length} audit events. ` +
+          (isAnchored
+            ? `On-chain check of primary item: ANCHORED (tx ${chain.matches?.[0]?.txHash || '—'}).`
+            : 'On-chain check of primary item: Not confirmed in EvidenceRegistry on-chain.'),
+        onChain: isAnchored ? 'ANCHORED' : 'NOT_FOUND',
         onChainTx: chain.matches?.[0]?.txHash,
       });
       setVerifying(false);
@@ -215,7 +225,9 @@ export function VerificationPortal({ cases }: VerificationPortalProps) {
           className={`p-6 rounded-2xl border shadow-xs animate-scale-up ${
             result.status === 'VALID'
               ? 'bg-emerald-50/60 border-emerald-300'
-              : result.status === 'NOT_FOUND'
+              : result.status === 'UNANCHORED'
+              ? 'bg-amber-50/60 border-amber-300'
+              : result.status === 'NOT_FOUND' || result.status === 'MISMATCH'
               ? 'bg-rose-50/60 border-rose-300'
               : 'bg-slate-50 border-slate-200'
           }`}
@@ -225,13 +237,17 @@ export function VerificationPortal({ cases }: VerificationPortalProps) {
               className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
                 result.status === 'VALID'
                   ? 'bg-emerald-100 text-emerald-600'
-                  : result.status === 'NOT_FOUND'
+                  : result.status === 'UNANCHORED'
+                  ? 'bg-amber-100 text-amber-600'
+                  : result.status === 'NOT_FOUND' || result.status === 'MISMATCH'
                   ? 'bg-rose-100 text-rose-600'
                   : 'bg-slate-100 text-slate-500'
               }`}
             >
               {result.status === 'VALID' ? (
                 <CheckCircle2 className="w-6 h-6" />
+              ) : result.status === 'UNANCHORED' ? (
+                <AlertTriangle className="w-6 h-6" />
               ) : (
                 <XCircle className="w-6 h-6" />
               )}
@@ -240,11 +256,19 @@ export function VerificationPortal({ cases }: VerificationPortalProps) {
             <div className="min-w-0 flex-1">
               <h3
                 className={`text-sm font-black ${
-                  result.status === 'VALID' ? 'text-emerald-800' : 'text-rose-800'
+                  result.status === 'VALID'
+                    ? 'text-emerald-800'
+                    : result.status === 'UNANCHORED'
+                    ? 'text-amber-800'
+                    : 'text-rose-800'
                 }`}
               >
                 {result.status === 'VALID'
                   ? 'INTEGRITY VERIFIED — RECORD MATCHES ON-CHAIN ANCHOR'
+                  : result.status === 'UNANCHORED'
+                  ? 'LOCAL WORKSPACE RECORD — NOT ANCHORED ON-CHAIN'
+                  : result.status === 'MISMATCH'
+                  ? 'INTEGRITY FAILURE — HASH MISMATCH DETECTED'
                   : result.status === 'NOT_FOUND'
                   ? 'RECORD NOT FOUND'
                   : 'Enter a hash or case number to begin'}
@@ -280,8 +304,8 @@ export function VerificationPortal({ cases }: VerificationPortalProps) {
                       </span>
                     )}
                     {result.onChain === 'NOT_FOUND' && (
-                      <span className="px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-bold text-[10px]">
-                        LEDGER RECORD CONFIRMED (Pending Next Batch Sync)
+                      <span className="px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 font-bold text-[10px]">
+                        UNANCHORED (Session Local Only — No EVM Transaction)
                       </span>
                     )}
                     {result.contentCheck === 'MATCH' && (
@@ -296,7 +320,7 @@ export function VerificationPortal({ cases }: VerificationPortalProps) {
                     )}
                     {result.contentCheck === 'UNAVAILABLE' && (
                       <span className="px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-500 font-bold text-[10px]">
-                        CONTENT SECURED ON REMOTE IPFS NODE
+                        RAW BYTES NOT CACHED IN SESSION
                       </span>
                     )}
                   </div>

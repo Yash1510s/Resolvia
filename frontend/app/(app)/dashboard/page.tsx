@@ -28,8 +28,6 @@ import { isClosed } from '../../lib/caseLifecycle';
 import type { MyCaseRole } from '../../types';
 import { Card, Chip, categoryLabel, statusTone, fmtDate, shortCaseId, Ring } from '../../components/ui';
 
-const REP = 820;
-
 export default function DashboardRoute() {
   return (
     <Suspense fallback={null}>
@@ -39,14 +37,25 @@ export default function DashboardRoute() {
 }
 
 function Dashboard() {
-  const { cases, identity, invitations, login, myJurorPseudonym } = useApp();
+  const { cases, identity, invitations, login, myJurorPseudonym, jurorHistory } = useApp();
   const { user: authUser } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const repScore = useMemo(() => {
+    if (!jurorHistory || jurorHistory.length === 0) return 780;
+    const onTime = jurorHistory.filter((h) => h.onTime).length;
+    const onTimePct = Math.round((onTime / jurorHistory.length) * 100);
+    return Math.min(1000, Math.max(500, 500 + Math.round(onTimePct * 5)));
+  }, [jurorHistory]);
+
   // Hydration-safe: server (UTC) and browser (local TZ) can disagree on the time of day.
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    setMounted(true);
+    setNow(Date.now());
+  }, []);
 
   useEffect(() => {
     const p = searchParams.get('persona');
@@ -66,12 +75,12 @@ function Dashboard() {
   const greet = mounted
     ? hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening'
     : 'Hello';
-  const firstName = (authUser?.name || identity.name || 'Yash').split(' ')[0];
+  const firstName = (authUser?.name || identity.name || (identity.wallet ? `Juror ${identity.wallet.slice(2, 6).toUpperCase()}` : 'User')).split(' ')[0];
 
   const upcoming = useMemo(() => {
     const list: { when: string; time: string; icon: React.ReactNode; tone: string; title: string; sub: string; href: string }[] = [];
     for (const c of activeCases.filter((c) => c.myRole)) {
-      const tl = new Date(c.votingDeadline).getTime() - Date.now();
+      const tl = now ? new Date(c.votingDeadline).getTime() - now : 0;
       // "when" is relative to now → SSR/CSR can disagree; use a static date until mounted.
       const when = !mounted
         ? fmtDate(c.votingDeadline).split(',')[0]
@@ -89,7 +98,7 @@ function Dashboard() {
       });
     }
     for (const i of invitations.filter((x) => x.status === 'PENDING')) {
-      const invTl = new Date(i.expiresAt).getTime() - Date.now();
+      const invTl = now ? new Date(i.expiresAt).getTime() - now : 0;
       list.push({
         when: !mounted
           ? fmtDate(i.expiresAt).split(',')[0]
@@ -178,7 +187,7 @@ function Dashboard() {
           {stat(<FileText className="w-5 h-5 text-violet-600" />, 'bg-violet-100', activeCases.length, 'Active Cases', '/cases')}
           {stat(<CheckCircle2 className="w-5 h-5 text-emerald-600" />, 'bg-emerald-100', closedCases.length, 'Closed Cases', '/cases?tab=closed')}
           {stat(<Users className="w-5 h-5 text-blue-600" />, 'bg-blue-100', asJuror.length, 'As Juror', '/jury')}
-          {stat(<Shield className="w-5 h-5 text-amber-600" />, 'bg-amber-100', REP, 'Reputation Points', '/reputation')}
+          {stat(<Shield className="w-5 h-5 text-amber-600" />, 'bg-amber-100', repScore, 'Reputation Points', '/reputation')}
         </div>
 
         {/* AI + People + Blockchain */}
@@ -356,9 +365,9 @@ function Dashboard() {
           </div>
           <div className="mt-3.5">
             <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-              <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500" style={{ width: `${(REP / 1000) * 100}%` }} />
+              <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500" style={{ width: `${(repScore / 1000) * 100}%` }} />
             </div>
-            <p className="text-right text-[10px] font-bold text-slate-400 mt-1">{REP} / 1,000 XP</p>
+            <p className="text-right text-[10px] font-bold text-slate-400 mt-1">{repScore} / 1,000 XP</p>
           </div>
           <div className="grid grid-cols-4 gap-2 mt-3">
             {[
@@ -420,7 +429,7 @@ function Dashboard() {
             </Link>
           </div>
           <div className="flex items-center gap-4 mt-4">
-            <Ring value={REP} max={1000} label="Level 2" />
+            <Ring value={repScore} max={1000} label="Level 2" />
             <div className="min-w-0">
               <p className="text-[13px] font-black text-slate-900">Contributor</p>
               <p className="text-[11px] text-slate-400 mt-1 leading-snug">Consistent participation builds a fairer community.</p>

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "./lib/auth-context";
+import { ThemeProvider } from "./lib/theme-context";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -21,8 +22,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={inter.variable}>
-      <body className="min-h-screen bg-[#f8fafc] text-[#0f172a] antialiased">
-        <AuthProvider>{children}</AuthProvider>
+      <body className="min-h-screen bg-[#f8fafc] dark:bg-[#0b0f19] text-[#0f172a] dark:text-[#f8fafc] antialiased transition-colors duration-300">
+        <ThemeProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

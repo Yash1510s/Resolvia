@@ -9,8 +9,13 @@ import path from "path";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const file = path.join(process.cwd(), "..", "blockchain", "deployments", "local.json");
-  if (!existsSync(file)) {
+  const candidates = [
+    path.join(process.cwd(), "..", "blockchain", "deployments", "local.json"),
+    path.join(process.cwd(), "blockchain", "deployments", "local.json"),
+    path.join(process.cwd(), "public", "deployments", "local.json"),
+  ];
+  const file = candidates.find((f) => existsSync(f));
+  if (!file) {
     return NextResponse.json(
       { status: "NO_DEPLOYMENT", hint: "Run: cd blockchain && npm run node && npm run deploy:local" },
       { status: 404 }

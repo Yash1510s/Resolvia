@@ -41,7 +41,7 @@ export default function ReputationPage() {
       desc: 'Accepts/declines invitations in a timely way.',
     },
   ];
-  const total = Math.round(signals.reduce((s, x) => s + x.score * parseFloat(x.weight), 0));
+  const total = Math.round(signals.reduce((s, x) => s + x.score * (parseFloat(x.weight) / 100), 0));
 
   return (
     <div className="space-y-5">

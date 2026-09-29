@@ -23,6 +23,28 @@ import urllib.error
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 
+def _load_env():
+    for env_path in [
+        os.path.join(os.path.dirname(__file__), ".env"),
+        os.path.join(os.path.dirname(__file__), "..", ".env"),
+        os.path.join(os.path.dirname(__file__), "..", "backend", ".env"),
+    ]:
+        if os.path.exists(env_path):
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k = k.strip()
+                            v = v.strip().strip('"').strip("'")
+                            if k and k not in os.environ:
+                                os.environ[k] = v
+            except Exception:
+                pass
+
+_load_env()
+
 try:
     from ml_predictor import MLPredictor, predict_dispute
 except ImportError:
@@ -95,7 +117,7 @@ class EvidenceAnalyzer:
             res = {
                 "available": True,
                 "provider": "Google Gemini",
-                "model": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
+                "model": os.environ.get("GEMINI_MODEL", "gemini-3.5-flash"),
                 "mode": "CLOUD_LLM",
                 "promptDefense": "ACTIVE"
             }
@@ -153,7 +175,7 @@ class EvidenceAnalyzer:
             return False
 
     @classmethod
-    def analyze_dispute(
+    def analyze_dispute_stream(
         cls,
         case_id: str,
         case_number: str,
@@ -162,15 +184,60 @@ class EvidenceAnalyzer:
         evidence_list: List[Dict[str, Any]],
         category: str = "Personal",
         dispute_amount: float = 0.0,
-    ) -> Dict[str, Any]:
-        # 1. OWASP Prompt Defense Inspection
+    ):
+        # Stage 0: OWASP Prompt Defense Inspection
+        yield {
+            "stage": 0,
+            "name": "OWASP LLM01 Defense",
+            "detail": "Isolating untrusted party claims & sanitizing prompt injection vectors",
+            "status": "RUNNING",
+        }
         combined_text = f"{claimant_statement} {respondent_statement} " + " ".join([e.get("description", "") for e in evidence_list])
         defense_result = PromptInjectionDefense.inspect_text(combined_text)
+        yield {
+            "stage": 0,
+            "name": "OWASP LLM01 Defense",
+            "detail": f"Sanitization complete: {defense_result['status']} ({defense_result['threatsDetected']} threats detected)",
+            "status": "COMPLETED",
+            "data": defense_result,
+        }
 
-        # 2. Attempt LLM generation based on configured provider
+        # Stage 1: Deterministic ML Champion Inference (XGBoost)
+        yield {
+            "stage": 1,
+            "name": "Deterministic ML Champion Inference",
+            "detail": "Evaluating XGBoost 119-feature statistical risk model",
+            "status": "RUNNING",
+        }
+        ml_prediction = None
+        if predict_dispute:
+            try:
+                ml_prediction = predict_dispute(
+                    claimant_statement=claimant_statement,
+                    respondent_statement=respondent_statement,
+                    category=category,
+                    evidence_list=evidence_list,
+                    dispute_amount=float(dispute_amount or 0.0),
+                )
+            except Exception as e:
+                print(f"[AI-Engine] ML inference error: {e}")
+        yield {
+            "stage": 1,
+            "name": "Deterministic ML Champion Inference",
+            "detail": f"ML prediction: {ml_prediction.get('favoredParty', 'N/A')} ({ml_prediction.get('confidence', 0)}% confidence)" if ml_prediction else "ML baseline heuristic applied",
+            "status": "COMPLETED",
+            "data": ml_prediction,
+        }
+
+        # Stage 2: Cryptographic Cross-Reference
+        yield {
+            "stage": 2,
+            "name": "Cryptographic Cross-Reference",
+            "detail": "Matching claim assertions with on-chain SHA-256 evidence digests",
+            "status": "RUNNING",
+        }
         status = cls.get_status()
         report_data = None
-
         if status["provider"] == "Google Gemini":
             report_data = cls._try_gemini(
                 case_id, case_number, claimant_statement, respondent_statement, evidence_list
@@ -184,27 +251,24 @@ class EvidenceAnalyzer:
                 case_id, case_number, claimant_statement, respondent_statement, evidence_list
             )
 
-        # Fallback to dynamic heuristic NLP if LLM is unavailable or failed
         if not report_data:
             report_data = cls._dynamic_heuristic_analysis(
                 case_id, case_number, claimant_statement, respondent_statement, evidence_list
             )
+        yield {
+            "stage": 2,
+            "name": "Cryptographic Cross-Reference",
+            "detail": f"Evidence mapping verified: {len(report_data.get('claimMappings', []))} claims cross-referenced",
+            "status": "COMPLETED",
+        }
 
-        # 3. Deterministic ML Champion Inference (XGBoost)
-        ml_prediction = None
-        if predict_dispute:
-            try:
-                ml_prediction = predict_dispute(
-                    claimant_statement=claimant_statement,
-                    respondent_statement=respondent_statement,
-                    category=category,
-                    evidence_list=evidence_list,
-                    dispute_amount=float(dispute_amount or 0.0),
-                )
-            except Exception as e:
-                print(f"[AI-Engine] ML inference error: {e}")
-
-        # 4. Multi-Engine Agreement & Consensus Score
+        # Stage 3: Contradiction Radar & Dual Consensus
+        yield {
+            "stage": 3,
+            "name": "Contradiction Radar & Dual Consensus",
+            "detail": "Cross-checking LLM advisory against ML model predictions",
+            "status": "RUNNING",
+        }
         advisory_rec = report_data.get("advisoryRecommendation", {
             "favoredParty": "Split Settlement",
             "confidence": 60,
@@ -216,8 +280,6 @@ class EvidenceAnalyzer:
         if ml_prediction:
             llm_favored = str(advisory_rec.get("favoredParty", "")).strip().lower()
             ml_favored = str(ml_prediction.get("favoredParty", "")).strip().lower()
-
-            # Normalization check
             party_match = (
                 (llm_favored == ml_favored) or
                 ("claimant" in llm_favored and "claimant" in ml_favored) or
@@ -225,10 +287,8 @@ class EvidenceAnalyzer:
                 ("split" in llm_favored and "split" in ml_favored) or
                 ("compromise" in llm_favored and "compromise" in ml_favored)
             )
-
             llm_conf = float(advisory_rec.get("confidence", 50))
             ml_conf = float(ml_prediction.get("confidence", 50))
-
             if party_match:
                 consensus_level = "HIGH_CONSENSUS"
                 consensus_score = round(min(100.0, (llm_conf + ml_conf) / 2.0 + 10.0), 1)
@@ -245,7 +305,6 @@ class EvidenceAnalyzer:
                     f"while {ml_prediction.get('modelInfo', {}).get('name', 'ML')} predicts "
                     f"{ml_prediction.get('favoredParty')}. Human juror panel review is critically advised."
                 )
-
             model_consensus = {
                 "consensusLevel": consensus_level,
                 "consensusScore": consensus_score,
@@ -256,7 +315,6 @@ class EvidenceAnalyzer:
                 "summary": consensus_summary,
             }
 
-        # 5. Assemble canonical report payload
         report_payload = {
             "reportId": f"AIR-{case_number}-GEN",
             "caseId": case_id,
@@ -271,11 +329,46 @@ class EvidenceAnalyzer:
             "modelConsensus": model_consensus,
             "advisoryDisclaimer": ADVISORY_DISCLAIMER,
         }
-
-        # 6. Canonical cryptographic SHA-256 fingerprint
         canonical_str = json.dumps(report_payload, sort_keys=True)
         report_payload["reportSha256"] = hashlib.sha256(canonical_str.encode("utf-8")).hexdigest()
-        return report_payload
+
+        yield {
+            "stage": 3,
+            "name": "Contradiction Radar & Dual Consensus",
+            "detail": f"Dual consensus: {model_consensus['consensusLevel'] if model_consensus else 'Completed'}",
+            "status": "COMPLETED",
+        }
+        yield {
+            "status": "SUCCESS",
+            "report": report_payload,
+        }
+
+    @classmethod
+    def analyze_dispute(
+        cls,
+        case_id: str,
+        case_number: str,
+        claimant_statement: str,
+        respondent_statement: str,
+        evidence_list: List[Dict[str, Any]],
+        category: str = "Personal",
+        dispute_amount: float = 0.0,
+    ) -> Dict[str, Any]:
+        last_report = None
+        for event in cls.analyze_dispute_stream(
+            case_id=case_id,
+            case_number=case_number,
+            claimant_statement=claimant_statement,
+            respondent_statement=respondent_statement,
+            evidence_list=evidence_list,
+            category=category,
+            dispute_amount=dispute_amount,
+        ):
+            if event.get("status") == "SUCCESS" and "report" in event:
+                return event["report"]
+            if "data" in event and isinstance(event.get("data"), dict) and "reportSha256" in event["data"]:
+                last_report = event["data"]
+        return last_report or {}
 
     @classmethod
     def _try_gemini(
@@ -291,13 +384,13 @@ class EvidenceAnalyzer:
             return None
 
         prompt = cls._build_analysis_prompt(case_number, claimant, respondent, evidence)
+        model_name = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+        # 1. Try google.genai SDK
         try:
             from google import genai
             from google.genai import types
 
             client = genai.Client(api_key=api_key)
-            model_name = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
-
             response = client.models.generate_content(
                 model=model_name,
                 contents=prompt,
@@ -309,8 +402,42 @@ class EvidenceAnalyzer:
             data = json.loads(response.text)
             data["modelIdentifier"] = f"Google Gemini ({model_name})"
             return data
-        except Exception as e:
-            print(f"[AI-Engine] Gemini generation failed: {e}")
+        except Exception:
+            pass
+
+        # 2. Direct Google Gemini REST API fallback
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+            payload = {
+                "contents": [
+                    {"parts": [{"text": prompt}]}
+                ],
+                "generationConfig": {
+                    "responseMimeType": "application/json",
+                    "temperature": 0.2
+                }
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                res_data = json.loads(resp.read().decode("utf-8"))
+                text = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                if text.startswith("```"):
+                    lines = text.splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].startswith("```"):
+                        lines = lines[:-1]
+                    text = "\n".join(lines).strip()
+                data = json.loads(text)
+                data["modelIdentifier"] = f"Google Gemini ({model_name})"
+                return data
+        except Exception as e_rest:
+            print(f"[AI-Engine] Gemini generation failed: {e_rest}")
             return None
 
     @classmethod

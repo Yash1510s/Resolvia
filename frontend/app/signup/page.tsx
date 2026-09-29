@@ -33,6 +33,7 @@ import {
   BtnBack,
   DevCodeHint,
   useGoogle,
+  useGitHub,
   SocialRow,
 } from '../components/auth-ui';
 
@@ -57,7 +58,7 @@ export default function SignupPage() {
 
 function SignupInner() {
   const router = useRouter();
-  const { user, requestOtp, verifyOtp, googleLogin } = useAuth();
+  const { user, requestOtp, verifyOtp, googleLogin, updateProfile } = useAuth();
   const { profilePrefs, setProfilePrefs } = useApp();
 
   const [step, setStep] = useState(1);
@@ -86,13 +87,18 @@ function SignupInner() {
         setError(r.error);
         return;
       }
+      if (name.trim()) {
+        await updateProfile({ name: name.trim() });
+        if (typeof window !== 'undefined') localStorage.setItem('resolvia_user_name', name.trim());
+      }
       // Google created/found the account — apply role defaults and go in.
       setProfilePrefs({ ...profilePrefs, roleType: 'INDIVIDUAL' });
       router.push('/dashboard');
     },
-    [googleLogin, profilePrefs, setProfilePrefs, router]
+    [googleLogin, profilePrefs, setProfilePrefs, router, name, updateProfile]
   );
   const { ref: googleRef, ready: googleReady, enabled: googleEnabled } = useGoogle(handleGoogle);
+  const { enabled: githubEnabled, login: githubRedirect } = useGitHub();
 
   useEffect(() => {
     if (resendIn <= 0) return;
@@ -131,6 +137,11 @@ function SignupInner() {
     if (r.error) {
       setError(r.error);
       return;
+    }
+    const chosen = (displayName.trim() || name.trim());
+    if (chosen) {
+      await updateProfile({ name: chosen });
+      if (typeof window !== 'undefined') localStorage.setItem('resolvia_user_name', chosen);
     }
     // Account created (or found) server-side with an assigned on-chain identity.
     setProfilePrefs({
@@ -227,7 +238,7 @@ function SignupInner() {
               <BtnPrimary onClick={() => step1Valid && setStep(2)} disabled={!step1Valid}>
                 Continue <ArrowRight className="w-4 h-4" />
               </BtnPrimary>
-              <SocialRow googleRef={googleRef} googleReady={googleReady} googleEnabled={googleEnabled} />
+              <SocialRow googleRef={googleRef} googleReady={googleReady} googleEnabled={googleEnabled} githubEnabled={githubEnabled} onGithubClick={githubRedirect} />
               <p className="text-[11px] text-slate-500 text-center pt-1">
                 Already have an account?{' '}
                 <Link href="/login" className="font-black text-violet-600 hover:text-violet-700">
@@ -319,15 +330,17 @@ function SignupInner() {
                 />
               </div>
               <div>
-                <label className="text-[11px] font-bold text-slate-600 block mb-1.5">Bio (Optional)</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Bio (Optional)</label>
+                  <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">{bio.length}/350</span>
+                </div>
                 <textarea
                   value={bio}
-                  onChange={(e) => setBio(e.target.value.slice(0, 200))}
+                  onChange={(e) => setBio(e.target.value.slice(0, 350))}
                   rows={3}
                   placeholder="Computer Science Student | Interested in Technology, Law and Social Impact."
-                  className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-[13px] font-semibold text-slate-900 placeholder:text-slate-400 resize-none"
+                  className="w-full px-3.5 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none resize-none transition-all"
                 />
-                <p className="text-right text-[10px] text-slate-400 mt-1">{bio.length}/200</p>
               </div>
               <div className="flex items-center justify-between pt-1">
                 <BtnBack onClick={() => setStep(2)} />
@@ -348,7 +361,7 @@ function SignupInner() {
                 {busy ? 'Verifying…' : 'Verify & Continue'} {!busy && <ArrowRight className="w-4 h-4" />}
               </BtnPrimary>
               <div className="flex items-center justify-between">
-                <BtnBack onClick={() => setStep(3)} children="Back to Sign Up" />
+                <BtnBack onClick={() => setStep(3)}>Back to Sign Up</BtnBack>
                 <button
                   onClick={sendCode}
                   disabled={resendIn > 0 || busy}

@@ -24,10 +24,15 @@ import {
   Search,
   Menu,
   X,
+  Sparkles,
 } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import { useAuth } from '../lib/auth-context';
 import { PublicNav } from './PublicNav';
+import { AmbientBackground } from './AmbientBackground';
+import { ProfileCustomizerModal } from './ProfileCustomizerModal';
+import { NameSetupModal } from './NameSetupModal';
+import { WalletModal } from './WalletModal';
 import type { MyCaseRole } from '../types';
 
 
@@ -64,10 +69,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user: authUser, logout: authLogout } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [customizerOpen, setCustomizerOpen] = useState(false);
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [q, setQ] = useState('');
+  const [mounted, setMounted] = useState(false);
+  const [customAvatar, setCustomAvatar] = useState<string | null>(null);
+  const [localName, setLocalName] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const pendingInvites = invitations.filter((i) => i.status === 'PENDING').length;
+
+  useEffect(() => {
+    setMounted(true);
+    setCustomAvatar(localStorage.getItem('resolvia_custom_avatar'));
+    setLocalName(localStorage.getItem('resolvia_user_name'));
+  }, []);
 
   // Global Ctrl/Cmd+K focuses the search box (the hint in the input is real).
   useEffect(() => {
@@ -101,20 +117,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   const badgeFor = (key?: 'messages' | 'jury') => {
+    if (!mounted) return 0;
     if (key === 'messages') return unreadCount;
     if (key === 'jury') return pendingInvites;
     return 0;
   };
 
-  const displayName = authUser ? authUser.name : 'Guest User';
+  const displayName =
+    authUser?.name ||
+    localName ||
+    (isLoggedIn ? identity.name : 'Guest User');
   const displayRole = authUser
     ? profilePrefs.roleType === 'PROFESSIONAL'
       ? 'Arbitration Professional'
       : profilePrefs.roleType === 'INSTITUTION'
       ? 'Institutional Member'
       : 'Verified Member'
+    : isLoggedIn
+    ? `Demo · ${activeRole === 'CLAIMANT' ? 'Claimant' : activeRole === 'RESPONDENT' ? 'Respondent' : 'Juror'}`
     : 'Not signed in';
-  const walletShort = authUser ? `${authUser.wallet.slice(0, 6)}…${authUser.wallet.slice(-4)}` : null;
+  const isMetaMaskLinked = Boolean(authUser?.metamaskAddress);
+  const activeWalletAddress = authUser?.metamaskAddress || authUser?.wallet || (isLoggedIn ? identity.wallet : null);
+  const walletShort = activeWalletAddress
+    ? `${activeWalletAddress.slice(0, 6)}…${activeWalletAddress.slice(-4)}`
+    : null;
 
   const navItems = (
     <nav className="space-y-1">
@@ -215,44 +241,45 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#eef1f6] flex flex-col">
+    <div className="min-h-screen bg-[#f8fafc] dark:bg-[#0b0f19] flex flex-col relative text-slate-900 dark:text-slate-100 transition-colors duration-300">
+      <AmbientBackground />
       {/* ── Top bar ── */}
-      <header className="h-14 bg-white border-b border-slate-200 flex items-center gap-3 px-3 sm:px-5 sticky top-0 z-40">
-        <button className="lg:hidden p-2 -ml-1 text-slate-500" onClick={() => setMobileNavOpen(true)} aria-label="Open menu">
+      <header className="h-14 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-b border-slate-200 dark:border-white/10 flex items-center gap-3 px-3 sm:px-5 sticky top-0 z-40 text-slate-800 dark:text-slate-200 transition-colors">
+        <button className="lg:hidden p-2 -ml-1 text-slate-400 hover:text-slate-600 dark:hover:text-white" onClick={() => setMobileNavOpen(true)} aria-label="Open menu">
           <Menu className="w-5 h-5" />
         </button>
 
-        <div className="flex-1 max-w-xl flex items-center gap-2.5 bg-slate-100 hover:bg-slate-200/70 rounded-xl px-3.5 py-2.5 cursor-text transition-colors">
-          <Search className="w-4 h-4 text-slate-400" />
+        <div className="flex-1 max-w-xl flex items-center gap-2.5 bg-slate-100 dark:bg-slate-800/60 hover:bg-slate-200/70 dark:hover:bg-slate-800/90 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 cursor-text transition-colors">
+          <Search className="w-4 h-4 text-slate-400 dark:text-slate-500" />
           <input
             ref={searchRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={doSearch}
             placeholder="Search cases, users, categories…"
-            className="flex-1 bg-transparent text-[13px] outline-none placeholder:text-slate-400 text-slate-700"
+            className="flex-1 bg-transparent text-[13px] outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 text-slate-900 dark:text-slate-100"
           />
-          <kbd className="hidden sm:block text-[10px] font-bold text-slate-400 bg-white border border-slate-200 rounded-md px-1.5 py-0.5">Ctrl K</kbd>
+          <kbd className="hidden sm:block text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-md px-1.5 py-0.5">Ctrl K</kbd>
         </div>
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2.5">
           {/* Live Node / Chain status indicator */}
-          <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-100/80 border border-slate-200/80 text-[10px] font-bold text-slate-600">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-white/10 text-[10px] font-bold text-slate-700 dark:text-slate-300">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             <span>EVM Testnet Live</span>
           </div>
 
           {/* RSLV balance */}
-          <div className="hidden md:flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-1.5 rounded-xl text-[11px] font-bold">
-            <span>{rslvBalance.toFixed(0)} RSLV</span>
-            <button onClick={claimFaucet} className="bg-emerald-500 hover:bg-emerald-400 text-white w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black leading-none" title="Claim testnet RSLV (faucet)">
+          <div className="hidden md:flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 px-3 py-1.5 rounded-xl text-[11px] font-bold">
+            <span>{mounted ? rslvBalance.toFixed(0) : '100'} RSLV</span>
+            <button onClick={claimFaucet} className="bg-emerald-500 hover:bg-emerald-400 text-white w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black leading-none cursor-pointer" title="Claim testnet RSLV (faucet)">
               +
             </button>
           </div>
 
-          <Link href="/messages" className="relative w-9 h-9 rounded-xl hover:bg-slate-100 flex items-center justify-center text-slate-500 transition-colors" title="Messages">
+          <Link href="/messages" className="relative w-9 h-9 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400 transition-colors" title="Messages">
             <Bell className="w-[18px] h-[18px]" />
-            {unreadCount > 0 && (
+            {mounted && unreadCount > 0 && (
               <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center">
                 {unreadCount}
               </span>
@@ -260,22 +287,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
 
           {/* Wallet / Sign in chip */}
-          {authUser && walletShort ? (
-            <div className="hidden sm:flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl pl-1.5 pr-2.5 py-1.5" title={`Assigned on-chain wallet ${authUser.wallet}`}>
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-amber-400 to-orange-500 flex items-center justify-center">
-                <Wallet className="w-3.5 h-3.5 text-white" />
+          {mounted && authUser && walletShort ? (
+            <button
+              type="button"
+              onClick={() => setWalletModalOpen(true)}
+              className="hidden sm:flex items-center gap-2 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700/80 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-1.5 pr-2.5 py-1.5 transition-all cursor-pointer shadow-2xs group"
+              title={
+                isMetaMaskLinked
+                  ? `MetaMask Connected: ${activeWalletAddress}. Click to manage.`
+                  : `Custodial Key: ${activeWalletAddress}. Click to link your personal MetaMask wallet.`
+              }
+            >
+              <div
+                className={`w-7 h-7 rounded-lg flex items-center justify-center text-white shadow-xs ${
+                  isMetaMaskLinked
+                    ? 'bg-gradient-to-tr from-amber-400 to-orange-500'
+                    : 'bg-gradient-to-tr from-violet-500 to-indigo-600'
+                }`}
+              >
+                <Wallet className="w-3.5 h-3.5" />
               </div>
-              <div className="leading-tight">
-                <p className="text-[11px] font-bold text-slate-700 font-mono">{walletShort}</p>
-                <p className="text-[9px] font-bold text-emerald-600 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  Connected
+              <div className="leading-tight text-left">
+                <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 font-mono group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
+                  {walletShort}
+                </p>
+                <p className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  {isMetaMaskLinked ? 'MetaMask' : 'Link Web3 Wallet'}
                 </p>
               </div>
-            </div>
+            </button>
           ) : (
             <button
-              onClick={() => router.push('/login')}
+              onClick={() => router.push(mounted && authUser ? '/settings' : '/login')}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
             >
               <Wallet className="w-4 h-4" />
@@ -283,37 +327,71 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           )}
 
+          {/* Quick Customize Wallpaper Button */}
+          <button
+            onClick={() => setCustomizerOpen(true)}
+            title="Customize Live Wallpaper & Avatar"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-50 dark:bg-violet-950/40 hover:bg-violet-100 dark:hover:bg-violet-900/40 text-violet-700 dark:text-violet-300 text-xs font-bold transition-all border border-violet-200/60 dark:border-violet-800/40 cursor-pointer hidden md:flex"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400 animate-pulse" />
+            <span>Theme & Wallpaper</span>
+          </button>
+
           {/* User chip */}
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setUserMenuOpen((v) => !v)}
-              className="flex items-center gap-2.5 pl-1.5 pr-2 py-1 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+              className="flex items-center gap-2.5 pl-1.5 pr-2 py-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             >
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xs font-black">
-                {displayName.charAt(0).toUpperCase()}
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xs font-black overflow-hidden ring-2 ring-violet-500/20">
+                {authUser?.avatarUrl || customAvatar ? (
+                  <img
+                    src={authUser?.avatarUrl || customAvatar || ''}
+                    alt={displayName}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  displayName.charAt(0).toUpperCase()
+                )}
               </div>
               <div className="hidden sm:block text-left leading-tight">
-                <p className="text-[12px] font-bold text-slate-800">{displayName}</p>
-                <p className="text-[10px] text-slate-500">{displayRole}</p>
+                <p className="text-[12px] font-bold text-slate-900 dark:text-slate-100">{displayName}</p>
+                <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{displayRole}</p>
               </div>
               <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
             </button>
             {userMenuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-50">
-                <div className="px-4 py-2.5 border-b border-slate-100">
-                  <p className="text-xs font-bold text-slate-800">{displayName}</p>
-                  <p className="text-[11px] text-slate-500 truncate">{authUser ? authUser.email : 'Sign in to link your on-chain identity'}</p>
+              <div className="absolute right-0 top-full mt-2 w-64 bg-slate-900/95 backdrop-blur-2xl rounded-2xl shadow-2xl border border-white/10 py-2 z-50 text-slate-200">
+                <div className="px-4 py-2.5 border-b border-white/10">
+                  <p className="text-xs font-bold text-white">{displayName}</p>
+                  <p className="text-[11px] text-slate-400 truncate">
+                    {authUser
+                      ? authUser.email?.endsWith('@wallet.resolvia.eth')
+                        ? 'Web3 Connected · MetaMask'
+                        : authUser.email
+                      : 'Sign in to link your on-chain identity'}
+                  </p>
                   {authUser && (
-                    <p className="text-[10px] font-mono text-slate-400 mt-1">
+                    <p className="text-[10px] font-mono text-violet-400 mt-1 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                       Wallet: {walletShort}
                     </p>
                   )}
                 </div>
                 <div className="mt-1 pt-1 space-y-0.5">
-                  <Link href="/profile" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  <button
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      setCustomizerOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-bold text-violet-400 hover:bg-violet-950/40 cursor-pointer text-left transition-colors"
+                  >
+                    <Sparkles className="w-4 h-4 text-violet-400" /> Live Wallpaper & Avatar
+                  </button>
+                  <Link href="/profile" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5 transition-colors">
                     <User className="w-4 h-4 text-slate-400" /> Profile
                   </Link>
-                  <Link href="/settings" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  <Link href="/settings" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5 transition-colors">
                     <Settings className="w-4 h-4 text-slate-400" /> Settings
                   </Link>
                   {authUser ? (
@@ -324,7 +402,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         setUserMenuOpen(false);
                         router.push('/');
                       }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 cursor-pointer border-t border-slate-100 mt-1"
+                      className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-rose-400 hover:bg-rose-950/30 cursor-pointer border-t border-white/10 mt-1 transition-colors"
                     >
                       <LogOut className="w-4 h-4" /> Sign out
                     </button>
@@ -334,7 +412,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         setUserMenuOpen(false);
                         router.push('/login');
                       }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-violet-600 hover:bg-violet-50 cursor-pointer border-t border-slate-100 mt-1"
+                      className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-violet-400 hover:bg-violet-950/30 cursor-pointer border-t border-white/10 mt-1 transition-colors"
                     >
                       <Wallet className="w-4 h-4" /> Sign in
                     </button>
@@ -419,6 +497,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </footer>
         </main>
       </div>
+      <ProfileCustomizerModal open={customizerOpen} onClose={() => setCustomizerOpen(false)} />
+      <NameSetupModal />
+      <WalletModal open={walletModalOpen} onClose={() => setWalletModalOpen(false)} />
     </div>
   );
 }

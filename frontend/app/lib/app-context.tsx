@@ -24,7 +24,7 @@ export interface Identity {
   name: string;
   email?: string;
   wallet: string;
-  provider: 'google' | 'email' | 'demo';
+  provider: 'google' | 'github' | 'email' | 'wallet' | 'demo';
   sub: string; // short wallet for display
 }
 
@@ -50,8 +50,8 @@ interface AppContextValue {
   commitVote: (caseId: string, jurorId: string, commitment: string, vote: VoteChoice, salt: string, reasoning?: string) => void;
   revealVote: (caseId: string, jurorId: string, vote: VoteChoice, salt: string, reasoning?: string) => void;
   simulateOtherJurors: (caseId: string) => void;
-  runAIAnalysis: (caseId: string) => void;
-  submitResponse: (caseId: string, text: string) => void;
+  runAIAnalysis: (caseId: string, onStage?: (stage: number, detail?: string) => void) => Promise<void>;
+  submitResponse: (caseId: string, text: string) => Promise<void> | void;
   fileAppeal: (caseId: string, by: 'Claimant' | 'Respondent', grounds: string) => void;
   addDiscussionPost: (caseId: string, post: Omit<CommunityPost, 'id' | 'createdAt' | 'likes' | 'reports'>) => void;
   likeDiscussionPost: (caseId: string, postId: string) => void;
@@ -135,15 +135,26 @@ function pickVote(): VoteChoice {
 const STATE_KEY = 'resolvia_demo_state_v1';
 const DAY_MS = 86_400_000;
 
-function rebaseline(cases: DisputeCase[]): DisputeCase[] {
+function rebaseline(cases: DisputeCase[], userWallet?: string | null): DisputeCase[] {
   const now = Date.now();
+  const normalizedUser = userWallet ? userWallet.toLowerCase() : null;
   return cases.map((c) => {
-    if (c.verdictOutcome || c.status === 'CLOSED') return c;
-    let next = c;
-    if (new Date(c.votingDeadline).getTime() < now) {
+    let myRole = c.myRole;
+    if (normalizedUser) {
+      if (c.claimant?.wallet && c.claimant.wallet.toLowerCase() === normalizedUser) {
+        myRole = 'CLAIMANT';
+      } else if (c.respondent?.wallet && c.respondent.wallet.toLowerCase() === normalizedUser) {
+        myRole = 'RESPONDENT';
+      } else if (c.jurors?.some((j) => j.walletAddress && j.walletAddress.toLowerCase() === normalizedUser)) {
+        myRole = 'JUROR';
+      }
+    }
+    let next: DisputeCase = { ...c, myRole };
+    if (next.verdictOutcome || next.status === 'CLOSED') return next;
+    if (new Date(next.votingDeadline).getTime() < now) {
       next = { ...next, votingDeadline: new Date(now + DAY_MS).toISOString() };
     }
-    if (new Date(c.responseDeadline).getTime() < now && !c.respondent.responded) {
+    if (new Date(next.responseDeadline).getTime() < now && !next.respondent?.responded) {
       next = { ...next, responseDeadline: new Date(now + 2 * DAY_MS).toISOString() };
     }
     return next;
@@ -341,7 +352,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const data = await res.json();
           const st = data?.state;
           if (st) {
-            if (Array.isArray(st.cases) && st.cases.length) setCases(rebaseline(st.cases));
+            if (Array.isArray(st.cases) && st.cases.length) setCases(rebaseline(st.cases, authSub));
             if (Array.isArray(st.invitations)) setInvitations(st.invitations);
             if (Array.isArray(st.notifications)) setNotifications(st.notifications);
             if (typeof st.rslvBalance === 'number') setRslvBalance(st.rslvBalance);
@@ -358,6 +369,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
+  }, [authSub]);
+
+  // Dynamically update roles for active account
+  useEffect(() => {
+    if (authSub) {
+      setCases((prev) => rebaseline(prev, authSub));
+    }
   }, [authSub]);
 
   useEffect(() => {
@@ -487,7 +505,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const commitVote = useCallback(
-    (caseId: string, jurorId: string, commitment: string, vote: VoteChoice, salt: string, reasoning?: string) => {
+    async (caseId: string, jurorId: string, commitment: string, vote: VoteChoice, salt: string, reasoning?: string) => {
+      let realTxHash: string | undefined;
+      let realBlock: number | undefined;
+
+      try {
+        const token = typeof window !== 'undefined' ? window.localStorage.getItem('resolvia_token') : null;
+        if (token) {
+          const numId = Number(caseId.replace(/\D/g, '')) || 0;
+          const res = await fetch('/api/backend/wallet/vote/commit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ caseId: numId, commitment }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            realTxHash = data.txHash;
+            realBlock = data.blockNumber;
+          }
+        }
+      } catch (err) {
+        console.warn('Backend on-chain vote commit warning:', err);
+      }
+
       setCases((prev) =>
         prev.map((c) => {
           if (c.id !== caseId) return c;
@@ -509,7 +549,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           );
           const audit = [
             ...c.auditTrail,
-            { eventId: 'evt-c-' + Date.now(), eventNumber: 'EVENT COMMIT', title: `Vote commitment submitted (${jurorPseudonym(identity.wallet)})`, actor: jurorPseudonym(identity.wallet), actorRole: 'Juror (anonymous)', timestamp: tsPretty(), txHash: rndTx(), blockNumber: 6286120 + Math.floor(Math.random() * 50), metadataHash: commitment, details: `Blind commitment ${formatHash(commitment, 10)} recorded on ledger.` },
+            {
+              eventId: 'evt-c-' + Date.now(),
+              eventNumber: 'EVENT COMMIT',
+              title: `Vote commitment submitted (${jurorPseudonym(identity.wallet)})`,
+              actor: jurorPseudonym(identity.wallet),
+              actorRole: 'Juror (anonymous)',
+              timestamp: tsPretty(),
+              txHash: realTxHash || rndTx(),
+              blockNumber: realBlock || (6286120 + Math.floor(Math.random() * 50)),
+              metadataHash: commitment,
+              details: `Blind commitment ${formatHash(commitment, 10)} recorded on ledger.`,
+            },
           ];
           return { ...c, jurors, auditTrail: audit };
         })
@@ -520,7 +571,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const revealVote = useCallback(
-    (caseId: string, jurorId: string, vote: VoteChoice, salt: string, reasoning?: string) => {
+    async (caseId: string, jurorId: string, vote: VoteChoice, salt: string, reasoning?: string) => {
+      let realTxHash: string | undefined;
+      let realBlock: number | undefined;
+
+      try {
+        const token = typeof window !== 'undefined' ? window.localStorage.getItem('resolvia_token') : null;
+        if (token) {
+          const numId = Number(caseId.replace(/\D/g, '')) || 0;
+          const voteChoiceNum = vote === 'CLAIMANT_UPHELD' ? 1 : vote === 'RESPONDENT_UPHELD' ? 2 : 3;
+          const res = await fetch('/api/backend/wallet/vote/reveal', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ caseId: numId, vote: voteChoiceNum, salt }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            realTxHash = data.txHash;
+            realBlock = data.blockNumber;
+          }
+        }
+      } catch (err) {
+        console.warn('Backend on-chain vote reveal warning:', err);
+      }
+
       setCases((prev) =>
         prev.map((c) => {
           if (c.id !== caseId) return c;
@@ -547,7 +621,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
           const audit = [
             ...next.auditTrail,
-            { eventId: 'evt-r-' + Date.now(), eventNumber: 'EVENT REVEAL', title: `Vote revealed & verified (${jurorPseudonym(identity.wallet)})`, actor: jurorPseudonym(identity.wallet), actorRole: 'Juror (anonymous)', timestamp: tsPretty(), txHash: rndTx(), blockNumber: 6286200 + Math.floor(Math.random() * 50), metadataHash: rndTx(), details: `Salt matched commitment. Vote ${vote.replace('_', ' ')} tallied.` },
+            {
+              eventId: 'evt-r-' + Date.now(),
+              eventNumber: 'EVENT REVEAL',
+              title: `Vote revealed & verified (${jurorPseudonym(identity.wallet)})`,
+              actor: jurorPseudonym(identity.wallet),
+              actorRole: 'Juror (anonymous)',
+              timestamp: tsPretty(),
+              txHash: realTxHash || rndTx(),
+              blockNumber: realBlock || (6286200 + Math.floor(Math.random() * 50)),
+              metadataHash: rndTx(),
+              details: `Salt matched commitment. Vote ${vote.replace('_', ' ')} tallied.`,
+            },
           ];
           return { ...next, auditTrail: audit };
         })
@@ -622,47 +707,80 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const runAIAnalysis = useCallback(
-    async (caseId: string) => {
+    async (caseId: string, onStage?: (stage: number, detail?: string) => void) => {
       let aiReport: AIAnalysisReport | null = null;
       try {
         const targetCase = cases.find((c) => c.id === caseId);
         if (targetCase) {
-          const res = await fetch('/api/backend/ai/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              caseId: targetCase.id,
-              caseNumber: targetCase.caseNumber || targetCase.id,
-              claimantStatement: targetCase.claimSummary || targetCase.title,
-              respondentStatement: targetCase.counterClaimSummary || 'No formal counter-statement filed to date.',
-              evidenceList: targetCase.evidence.map((e) => ({
-                id: e.id,
-                title: e.title,
-                description: e.description,
-                fileName: e.fileName,
-                sha256Hash: e.sha256Hash,
-                accessTier: e.accessTier,
-              })),
-              category: targetCase.category,
-              disputeAmount: targetCase.disputeAmount,
-              // Legacy/fallback compatibility aliases
-              title: targetCase.title,
-              description: targetCase.claimSummary,
-              claimAmount: targetCase.disputeAmount,
-              evidence: targetCase.evidence.map((e) => ({
-                id: e.id,
-                title: e.title,
-                description: e.description,
-                fileName: e.fileName,
-                sha256Hash: e.sha256Hash,
-                accessTier: e.accessTier,
-              })),
-            }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (data.status === 'SUCCESS' && data.report) {
-              aiReport = data.report;
+          const payload = {
+            caseId: targetCase.id,
+            caseNumber: targetCase.caseNumber || targetCase.id,
+            claimantStatement: targetCase.claimSummary || targetCase.title,
+            respondentStatement: targetCase.counterClaimSummary || 'No formal counter-statement filed to date.',
+            evidenceList: targetCase.evidence.map((e) => ({
+              id: e.id,
+              title: e.title,
+              description: e.description,
+              fileName: e.fileName,
+              sha256Hash: e.sha256Hash,
+              accessTier: e.accessTier,
+            })),
+            category: targetCase.category,
+            disputeAmount: targetCase.disputeAmount,
+          };
+
+          // Try streaming endpoint first
+          let streamed = false;
+          try {
+            const streamRes = await fetch('/api/backend/ai/analyze/stream', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            if (streamRes.ok && streamRes.body) {
+              const reader = streamRes.body.getReader();
+              const decoder = new TextDecoder();
+              let buffer = '';
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                for (const line of lines) {
+                  if (line.startsWith('data: ')) {
+                    try {
+                      const evt = JSON.parse(line.slice(6));
+                      if (typeof evt.stage === 'number') {
+                        onStage?.(evt.stage, evt.detail);
+                      }
+                      if (evt.status === 'SUCCESS' && evt.report) {
+                        aiReport = evt.report;
+                        streamed = true;
+                      }
+                    } catch {
+                      /* ignore parse error */
+                    }
+                  }
+                }
+              }
+            }
+          } catch (streamErr) {
+            console.warn('AI stream error, falling back to standard endpoint:', streamErr);
+          }
+
+          // Fallback to standard endpoint if streaming did not yield report
+          if (!streamed || !aiReport) {
+            const res = await fetch('/api/backend/ai/analyze', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.status === 'SUCCESS' && data.report) {
+                aiReport = data.report;
+              }
             }
           }
         }
@@ -720,7 +838,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const submitResponse = useCallback(
-    (caseId: string, text: string) => {
+    async (caseId: string, text: string) => {
       setCases((prev) =>
         prev.map((c) => {
           if (c.id !== caseId) return c;
@@ -737,6 +855,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         })
       );
       pushNotification({ kind: 'RESPONSE_RECEIVED', title: `Response submitted — ${caseId}`, body: 'Your response is recorded and the evidence window is locked.', caseId, link: `/cases/${caseId}` });
+
+      try {
+        const token = typeof window !== 'undefined' ? window.localStorage.getItem('resolvia_token') : null;
+        if (token) {
+          await fetch(`/api/backend/disputes/${encodeURIComponent(caseId)}/respond`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ counterSummary: text, counter_claim: text }),
+          });
+        }
+      } catch (err) {
+        console.warn('Backend dispute response sync warning:', err);
+      }
     },
     [pushNotification]
   );
@@ -834,6 +965,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       let mimeType = 'application/pdf';
       let h = '';
 
+      let fileBase64 = '';
       if (file) {
         fileName = file.name;
         fileSize = `${(file.size / 1024).toFixed(1)} KB`;
@@ -841,11 +973,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const bytes = await file.arrayBuffer();
         h = await computeSha256Bytes(bytes);
         storeEvidenceContent(h, bytes);
+
+        const bytesArr = new Uint8Array(bytes);
+        let binary = '';
+        for (let i = 0; i < bytesArr.byteLength; i++) {
+          binary += String.fromCharCode(bytesArr[i]);
+        }
+        fileBase64 = btoa(binary);
       } else {
         h = await computeSha256(fileName + ':resolvia-evidence');
+        fileBase64 = btoa(fileName + ':resolvia-evidence-placeholder');
       }
 
-      const ipfsCid = 'bafybei' + h.slice(0, 44);
+      let ipfsCid = 'bafybei' + h.slice(0, 44);
+      let gatewayUrl = `https://gateway.pinata.cloud/ipfs/${ipfsCid}`;
+      try {
+        const ipfsRes = await fetch('/api/backend/ipfs/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fileName, contentBase64: fileBase64, sha256: h }),
+        });
+        if (ipfsRes.ok) {
+          const ipfsData = await ipfsRes.json();
+          if (ipfsData.ipfsCid) {
+            ipfsCid = ipfsData.ipfsCid;
+            gatewayUrl = ipfsData.gatewayUrl || gatewayUrl;
+          }
+        }
+      } catch (err) {
+        console.warn('IPFS upload fallback:', err);
+      }
+
       const now = tsNow();
 
       let onChainResult: { status: 'ANCHORED' | 'PENDING' | 'FAILED'; txHash?: string; blockNumber?: number | null; error?: string } = { status: 'PENDING' };

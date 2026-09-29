@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   User,
   Shield,
@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../lib/app-context';
 import { useAuth } from '../../lib/auth-context';
+import { useTheme } from '../../lib/theme-context';
 import { Card, BtnPrimary, Toggle } from '../../components/ui';
 
 type Section = 'account' | 'security' | 'notifications' | 'jury' | 'privacy' | 'preferences' | 'blockchain' | 'data' | 'accessibility';
@@ -46,18 +47,67 @@ const NAV: { id: Section; label: string; sub: string; icon: React.ReactNode }[] 
 
 export default function SettingsPage() {
   const { profilePrefs, setProfilePrefs, availability, setAvailability, resetDemoData, cases, logout } = useApp();
-  const { user: authUser } = useAuth();
+  const { user: authUser, updateProfile, linkWallet, unlinkWallet } = useAuth();
   const [section, setSection] = useState<Section>('account');
   const [account, setAccount] = useState<{ name: string; email: string; institution: string; location: string; role: import('../../types').RoleType; bio: string }>({
-    name: authUser?.name || 'Community Member',
+    name: authUser?.name || (typeof window !== 'undefined' ? localStorage.getItem('resolvia_user_name') : null) || 'Community Member',
     email: profilePrefs.email,
     institution: profilePrefs.institution,
     location: profilePrefs.location,
     role: profilePrefs.roleType || 'STUDENT',
     bio: profilePrefs.bio,
   });
+
+  const [walletLinking, setWalletLinking] = useState(false);
+  const [walletMsg, setWalletMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  const handleLinkMetaMask = async () => {
+    setWalletLinking(true);
+    setWalletMsg(null);
+    try {
+      if (typeof window === 'undefined' || !(window as any).ethereum) {
+        setWalletMsg({ type: 'err', text: 'MetaMask or Web3 extension not found in this browser.' });
+        setWalletLinking(false);
+        return;
+      }
+      const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
+      if (!accounts || !accounts[0]) {
+        setWalletMsg({ type: 'err', text: 'No accounts selected in MetaMask.' });
+        setWalletLinking(false);
+        return;
+      }
+      const chosen = accounts[0];
+      const res = await linkWallet(chosen);
+      if (res.error) {
+        setWalletMsg({ type: 'err', text: res.error });
+      } else {
+        setWalletMsg({ type: 'ok', text: `Linked MetaMask wallet ${chosen.slice(0, 6)}...${chosen.slice(-4)} successfully!` });
+      }
+    } catch (e: any) {
+      setWalletMsg({ type: 'err', text: e.message || 'MetaMask connection rejected.' });
+    } finally {
+      setWalletLinking(false);
+    }
+  };
+
+  const handleUnlinkMetaMask = async () => {
+    if (!window.confirm('Unlink your personal MetaMask wallet and revert to the custodial platform key?')) return;
+    setWalletMsg(null);
+    const res = await unlinkWallet();
+    if (res.error) {
+      setWalletMsg({ type: 'err', text: res.error });
+    } else {
+      setWalletMsg({ type: 'ok', text: 'Personal wallet unlinked.' });
+    }
+  };
+
+  useEffect(() => {
+    if (authUser?.name) {
+      setAccount((prev) => ({ ...prev, name: authUser.name }));
+    }
+  }, [authUser?.name]);
   const [savedFlash, setSavedFlash] = useState(false);
-  const [theme, setTheme] = useState('Light');
+  const { theme, setTheme } = useTheme();
   const [language, setLanguage] = useState('English (Default)');
   const [twoFA, setTwoFA] = useState(true);
   const [loginNotifs, setLoginNotifs] = useState(true);
@@ -109,7 +159,14 @@ export default function SettingsPage() {
     }
   };
 
-  const saveAccount = () => {
+  const saveAccount = async () => {
+    const trimmed = account.name.trim();
+    if (trimmed && updateProfile) {
+      await updateProfile({ name: trimmed });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('resolvia_user_name', trimmed);
+      }
+    }
     setProfilePrefs({
       ...profilePrefs,
       email: account.email,
@@ -123,10 +180,10 @@ export default function SettingsPage() {
   };
 
   const ToggleRow = ({ label, sub, on, onChange, disabled }: { label: string; sub: string; on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) => (
-    <div className="flex items-center justify-between gap-4 py-3 border-b border-slate-50 last:border-0">
+    <div className="flex items-center justify-between gap-4 py-3 border-b border-slate-100 dark:border-slate-800 last:border-0">
       <div>
-        <p className="text-[13px] font-bold text-slate-800">{label}</p>
-        <p className="text-[11px] text-slate-400 mt-0.5">{sub}</p>
+        <p className="text-[13px] font-bold text-slate-900 dark:text-white">{label}</p>
+        <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 mt-0.5">{sub}</p>
       </div>
       <Toggle on={on} onChange={onChange} disabled={disabled} />
     </div>
@@ -136,32 +193,32 @@ export default function SettingsPage() {
     <div>
       <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Settings</h1>
-          <p className="text-[13px] text-slate-500 mt-1">Manage your account, preferences, and privacy settings.</p>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Settings</h1>
+          <p className="text-[13.5px] font-semibold text-slate-700 dark:text-slate-200 mt-1">Manage your account, preferences, and privacy settings.</p>
         </div>
-        <div className="p-3.5 rounded-2xl bg-violet-50 border border-violet-100 max-w-[260px]">
-          <p className="italic text-[12px] text-slate-600">"Control your data. Contribute with confidence."</p>
-          <p className="text-[10px] text-slate-400 mt-1.5">— Resolvia</p>
+        <div className="p-3.5 rounded-2xl bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-900/40 max-w-[260px]">
+          <p className="italic text-[12px] font-medium text-slate-700 dark:text-slate-200">"Control your data. Contribute with confidence."</p>
+          <p className="text-[10.5px] font-bold text-slate-500 dark:text-slate-400 mt-1.5">— Resolvia</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-5">
         {/* Sub-nav */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-2 h-fit">
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-white/10 rounded-2xl p-2 h-fit">
           {NAV.map((n) => {
             const active = section === n.id;
             return (
               <button
                 key={n.id}
                 onClick={() => setSection(n.id)}
-                className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-left transition-all ${
-                  active ? 'bg-violet-50 border border-violet-200' : 'border border-transparent hover:bg-slate-50'
+                className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-left transition-all cursor-pointer ${
+                  active ? 'bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800' : 'border border-transparent hover:bg-slate-100/70 dark:hover:bg-white/5'
                 }`}
               >
-                <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${active ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{n.icon}</span>
+                <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${active ? 'bg-violet-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>{n.icon}</span>
                 <span>
-                  <span className={`block text-[12.5px] font-bold ${active ? 'text-violet-700' : 'text-slate-700'}`}>{n.label}</span>
-                  <span className="block text-[10px] text-slate-400">{n.sub}</span>
+                  <span className={`block text-[12.5px] font-bold ${active ? 'text-violet-700 dark:text-violet-300' : 'text-slate-900 dark:text-white'}`}>{n.label}</span>
+                  <span className="block text-[10.5px] font-medium text-slate-500 dark:text-slate-400">{n.sub}</span>
                 </span>
               </button>
             );
@@ -177,8 +234,8 @@ export default function SettingsPage() {
                 <Card className="p-5">
                   <div className="flex items-center justify-between mb-4">
                     <div>
-                      <h2 className="text-[15px] font-black text-slate-900">Profile Information</h2>
-                      <p className="text-[11px] text-slate-400 mt-0.5">Update your public profile information.</p>
+                      <h2 className="text-[15px] font-black text-slate-900 dark:text-white">Profile Information</h2>
+                      <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 mt-0.5">Update your public profile information.</p>
                     </div>
                     <input
                       type="file"
@@ -204,22 +261,39 @@ export default function SettingsPage() {
                       )}
                     </div>
                     <div className="grid sm:grid-cols-2 gap-3 flex-1">
-                      <Field label="Full Name"><input value={account.name} onChange={(e) => setAccount({ ...account, name: e.target.value })} className={IN} /></Field>
+                      <Field label="Full Name"><input value={account.name} onChange={(e) => setAccount({ ...account, name: e.target.value })} placeholder="Your full name" className={IN} /></Field>
                       <Field label="Role">
-                        <select value={account.role} onChange={(e) => setAccount({ ...account, role: e.target.value as import('../../types').RoleType })} className={IN}>
+                        <select value={account.role} onChange={(e) => setAccount({ ...account, role: e.target.value as import('../../types').RoleType })} className={`${IN} cursor-pointer`}>
                           <option value="STUDENT">Student</option>
                           <option value="PROFESSIONAL">Professional</option>
                           <option value="INSTITUTION">Institution</option>
                           <option value="INDIVIDUAL">Individual</option>
                         </select>
                       </Field>
-                      <Field label="Institution"><input value={account.institution} onChange={(e) => setAccount({ ...account, institution: e.target.value })} className={IN} /></Field>
-                      <Field label="Location"><input value={account.location} onChange={(e) => setAccount({ ...account, location: e.target.value })} className={IN} /></Field>
+                      <Field label="Institution"><input value={account.institution} onChange={(e) => setAccount({ ...account, institution: e.target.value })} placeholder="e.g. University of Mumbai" className={IN} /></Field>
+                      <Field label="Location"><input value={account.location} onChange={(e) => setAccount({ ...account, location: e.target.value })} placeholder="e.g. Mumbai, India" className={IN} /></Field>
                     </div>
                   </div>
-                  <Field label={`Bio (${account.bio.length}/200)`} className="mt-3">
-                    <textarea value={account.bio} onChange={(e) => setAccount({ ...account, bio: e.target.value.slice(0, 200) })} rows={2} className="in resize-none" />
-                  </Field>
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                        Bio
+                      </label>
+                      <span className={`text-[11px] font-semibold tracking-tight ${account.bio.length > 350 ? 'text-rose-500' : 'text-slate-400 dark:text-slate-500'}`}>
+                        {account.bio.length} / 350
+                      </span>
+                    </div>
+                    <textarea
+                      value={account.bio}
+                      onChange={(e) => setAccount({ ...account, bio: e.target.value.slice(0, 350) })}
+                      rows={4}
+                      placeholder="Tell us about yourself, your dispute resolution experience, or areas of interest..."
+                      className="w-full block px-4 py-3 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 text-[13px] font-medium leading-relaxed outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 shadow-xs resize-none transition-all min-h-[105px]"
+                    />
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">
+                      Brief summary displayed on your public profile, jury service cards, and community posts.
+                    </p>
+                  </div>
                   <div className="mt-4 flex items-center gap-3">
                     <BtnPrimary onClick={saveAccount}><CheckCircle2 className="w-4 h-4" /> Save Changes</BtnPrimary>
                     {savedFlash && <span className="text-[12px] font-bold text-emerald-600 flex items-center gap-1"><CheckCircle2 className="w-4 h-4" /> Saved</span>}
@@ -227,26 +301,38 @@ export default function SettingsPage() {
                 </Card>
 
                 <Card className="p-5 h-fit">
-                  <h2 className="text-[15px] font-black text-slate-900">Account Status</h2>
-                  <p className="text-[11px] text-slate-400 mt-0.5 mb-4">Your account is in good standing.</p>
-                  <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center gap-3">
+                  <h2 className="text-[15px] font-black text-slate-900 dark:text-white">Account Status</h2>
+                  <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 mt-0.5 mb-4">Your account is in good standing.</p>
+                  <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0"><CheckCircle2 className="w-5 h-5" /></div>
                     <div>
-                      <p className="text-[12.5px] font-black text-emerald-800">Verified Account</p>
-                      <p className="text-[10.5px] text-emerald-600">Your identity has been verified.</p>
+                      <p className="text-[12.5px] font-black text-emerald-800 dark:text-emerald-200">Verified Account</p>
+                      <p className="text-[10.5px] font-medium text-emerald-600 dark:text-emerald-400">Your identity has been verified.</p>
                     </div>
                   </div>
                   <div className="mt-3 space-y-3">
                     {[
-                      { icon: <Mail className="w-4 h-4" />, t: 'Email Verified', s: account.email },
+                      {
+                        icon: <Mail className="w-4 h-4" />,
+                        t: account.email?.endsWith('@wallet.resolvia.eth') ? 'Web3 Identity' : 'Email Verified',
+                        s: account.email?.endsWith('@wallet.resolvia.eth') ? 'Web3 Authenticated (MetaMask)' : account.email,
+                      },
                       { icon: <GraduationCap className="w-4 h-4" />, t: 'Institution', s: account.institution },
-                      { icon: <KeyRound className="w-4 h-4" />, t: 'Sign-in method', s: authUser ? `OAuth / OTP (${authUser.provider})` : 'Email OTP (Verified)' },
+                      {
+                        icon: <KeyRound className="w-4 h-4" />,
+                        t: 'Sign-in method',
+                        s: authUser
+                          ? authUser.provider === 'wallet' || authUser.email?.endsWith('@wallet.resolvia.eth')
+                            ? 'Web3 Signature (MetaMask)'
+                            : `OAuth / OTP (${authUser.provider})`
+                          : 'Email OTP (Verified)',
+                      },
                     ].map((x, i) => (
                       <div key={i} className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">{x.icon}</div>
+                        <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">{x.icon}</div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-[12px] font-bold text-slate-700">{x.t}</p>
-                          <p className="text-[10.5px] text-slate-400 truncate">{x.s}</p>
+                          <p className="text-[12px] font-bold text-slate-900 dark:text-white">{x.t}</p>
+                          <p className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400 truncate">{x.s}</p>
                         </div>
                         <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
                       </div>
@@ -261,35 +347,35 @@ export default function SettingsPage() {
           {section === 'security' && (
             <div className="grid xl:grid-cols-2 gap-4">
               <Card className="p-5">
-                <h2 className="text-[15px] font-black text-slate-900 mb-1">Security Settings</h2>
-                <p className="text-[11px] text-slate-400 mb-4">Keep your account safe and secure.</p>
+                <h2 className="text-[15px] font-black text-slate-900 dark:text-white mb-1">Security Settings</h2>
+                <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 mb-4">Keep your account safe and secure.</p>
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between gap-4 py-3 border-b border-slate-50">
+                  <div className="flex items-center justify-between gap-4 py-3 border-b border-slate-100 dark:border-slate-800">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center"><KeyRound className="w-4 h-4" /></div>
+                      <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center"><KeyRound className="w-4 h-4" /></div>
                       <div>
-                        <p className="text-[13px] font-bold text-slate-800">Sign-in method</p>
-                        <p className="text-[11px] text-slate-400">Passwordless: email OTP or Google OAuth</p>
+                        <p className="text-[13px] font-bold text-slate-900 dark:text-white">Sign-in method</p>
+                        <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300">Passwordless: email OTP or Google OAuth</p>
                       </div>
                     </div>
-                    <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">ACTIVE</span>
+                    <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">ACTIVE</span>
                   </div>
-                  <div className="flex items-center justify-between gap-4 py-3 border-b border-slate-50">
+                  <div className="flex items-center justify-between gap-4 py-3 border-b border-slate-100 dark:border-slate-800">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center"><Fingerprint className="w-4 h-4" /></div>
+                      <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center"><Fingerprint className="w-4 h-4" /></div>
                       <div>
-                        <p className="text-[13px] font-bold text-slate-800">Two-Factor Authentication (2FA)</p>
-                        <p className="text-[11px] text-slate-400">Add an extra layer of security with authenticator app</p>
+                        <p className="text-[13px] font-bold text-slate-900 dark:text-white">Two-Factor Authentication (2FA)</p>
+                        <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300">Add an extra layer of security with authenticator app</p>
                       </div>
                     </div>
                     <Toggle on={twoFA} onChange={setTwoFA} />
                   </div>
                   <div className="flex items-center justify-between gap-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center"><Bell className="w-4 h-4" /></div>
+                      <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center"><Bell className="w-4 h-4" /></div>
                       <div>
-                        <p className="text-[13px] font-bold text-slate-800">Login Notifications</p>
-                        <p className="text-[11px] text-slate-400">Get notified of new logins</p>
+                        <p className="text-[13px] font-bold text-slate-900 dark:text-white">Login Notifications</p>
+                        <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300">Get notified of new logins</p>
                       </div>
                     </div>
                     <Toggle on={loginNotifs} onChange={setLoginNotifs} />
@@ -298,24 +384,24 @@ export default function SettingsPage() {
               </Card>
 
               <Card className="p-5">
-                <h2 className="text-[15px] font-black text-slate-900 mb-4">Active Sessions</h2>
+                <h2 className="text-[15px] font-black text-slate-900 dark:text-white mb-4">Active Sessions</h2>
                 <div className="space-y-3">
-                  <div className="flex items-center gap-3 p-3.5 rounded-xl bg-emerald-50 border border-emerald-100">
-                    <Monitor className="w-5 h-5 text-emerald-600" />
+                  <div className="flex items-center gap-3 p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800">
+                    <Monitor className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                     <div className="flex-1">
-                      <p className="text-[12.5px] font-bold text-slate-800">This device · Desktop</p>
-                      <p className="text-[10.5px] text-slate-400">Mumbai, IN · Active now</p>
+                      <p className="text-[12.5px] font-bold text-slate-900 dark:text-white">This device · Desktop</p>
+                      <p className="text-[10.5px] font-medium text-emerald-700 dark:text-emerald-300">Mumbai, IN · Active now</p>
                     </div>
-                    <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">CURRENT</span>
+                    <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200">CURRENT</span>
                   </div>
-                  <div className="flex items-center gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-100">
-                    <Smartphone className="w-5 h-5 text-slate-400" />
+                  <div className="flex items-center gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-white/10">
+                    <Smartphone className="w-5 h-5 text-slate-500 dark:text-slate-400" />
                     <div className="flex-1">
-                      <p className="text-[12.5px] font-bold text-slate-800">Mobile · Last active 2 days ago</p>
-                      <p className="text-[10.5px] text-slate-400">Mumbai, IN</p>
+                      <p className="text-[12.5px] font-bold text-slate-900 dark:text-white">Mobile · Last active 2 days ago</p>
+                      <p className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Mumbai, IN</p>
                     </div>
                     {mobileRevoked ? (
-                      <span className="text-[10px] font-bold text-slate-400 bg-slate-200 px-2 py-0.5 rounded-md">REVOKED</span>
+                      <span className="text-[10px] font-bold text-slate-500 bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded-md">REVOKED</span>
                     ) : (
                       <button
                         type="button"
@@ -327,7 +413,7 @@ export default function SettingsPage() {
                     )}
                   </div>
                 </div>
-                <p className="text-[10.5px] text-slate-400 mt-4 flex items-start gap-2">
+                <p className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400 mt-4 flex items-start gap-2">
                   <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" /> In production, sessions are JWT-based with rotating refresh tokens and device fingerprints.
                 </p>
               </Card>
@@ -337,8 +423,8 @@ export default function SettingsPage() {
           {/* ── Notifications ─ */}
           {section === 'notifications' && (
             <Card className="p-5 max-w-2xl">
-              <h2 className="text-[15px] font-black text-slate-900 mb-1">Notification Preferences</h2>
-              <p className="text-[11px] text-slate-400 mb-4">Choose what you want to be notified about.</p>
+              <h2 className="text-[15px] font-black text-slate-900 dark:text-white mb-1">Notification Preferences</h2>
+              <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 mb-4">Choose what you want to be notified about.</p>
               <ToggleRow label="Case Updates" sub="Status changes, new evidence, verdicts" on={profilePrefs.notifications.caseUpdates} onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, caseUpdates: v } })} />
               <ToggleRow label="Jury Invitations" sub="Invitations and jury related updates" on={profilePrefs.notifications.juryInvitations} onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, juryInvitations: v } })} />
               <ToggleRow label="Messages" sub="New discussion activity on your closed cases" on={profilePrefs.notifications.inApp} onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, inApp: v } })} />
@@ -352,16 +438,16 @@ export default function SettingsPage() {
           {section === 'jury' && (
             <Card className="p-5 max-w-2xl">
               <div className="flex items-center gap-3 mb-1">
-                <div className="w-9 h-9 rounded-xl bg-violet-100 text-violet-600 flex items-center justify-center"><Gavel className="w-4.5 h-4.5" /></div>
+                <div className="w-9 h-9 rounded-xl bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-300 flex items-center justify-center"><Gavel className="w-4.5 h-4.5" /></div>
                 <div>
-                  <h2 className="text-[15px] font-black text-slate-900">Jury Availability</h2>
-                  <p className="text-[11px] text-slate-400">These settings directly control whether you are eligible for jury selection.</p>
+                  <h2 className="text-[15px] font-black text-slate-900 dark:text-white">Jury Availability</h2>
+                  <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300">These settings directly control whether you are eligible for jury selection.</p>
                 </div>
               </div>
               <div className="mt-4">
                 <ToggleRow label="Join Jury Pool" sub="Receive invitations when you qualify (reputation + conflict checks)" on={availability.inPool} onChange={(v) => setAvailability({ ...availability, inPool: v })} />
-                <div className="py-3 border-b border-slate-50">
-                  <p className="text-[13px] font-bold text-slate-800 mb-2">Availability state</p>
+                <div className="py-3 border-b border-slate-100 dark:border-slate-800">
+                  <p className="text-[13px] font-bold text-slate-900 dark:text-white mb-2">Availability state</p>
                   <div className="flex flex-wrap gap-2">
                     {(
                       [
@@ -373,7 +459,11 @@ export default function SettingsPage() {
                       <button
                         key={o.v}
                         onClick={() => setAvailability({ ...availability, state: o.v, returnDate: o.v === 'TEMPORARILY_UNAVAILABLE' ? availability.returnDate : undefined })}
-                        className={`px-4 py-2.5 rounded-xl border-2 text-[12px] font-bold transition-all ${availability.state === o.v ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                        className={`px-4 py-2.5 rounded-xl border-2 text-[12px] font-bold transition-all cursor-pointer ${
+                          availability.state === o.v
+                            ? 'border-violet-500 bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300 shadow-sm'
+                            : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-white/20'
+                        }`}
                       >
                         {o.l}
                       </button>
@@ -381,12 +471,12 @@ export default function SettingsPage() {
                   </div>
                   {availability.state === 'TEMPORARILY_UNAVAILABLE' && (
                     <div className="mt-3">
-                      <label className="text-[11px] font-bold text-slate-500">Return date</label>
+                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Return date</label>
                       <input
                         type="date"
                         value={availability.returnDate || ''}
                         onChange={(e) => setAvailability({ ...availability, returnDate: e.target.value })}
-                        className="mt-1.5 px-3 py-2.5 rounded-xl border border-slate-200 text-[12px] outline-none"
+                        className="mt-1.5 px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-[12px] font-semibold text-slate-900 dark:text-white outline-none"
                       />
                     </div>
                   )}
@@ -394,10 +484,10 @@ export default function SettingsPage() {
                 <div className="py-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-[13px] font-bold text-slate-800">Max concurrent cases</p>
-                      <p className="text-[11px] text-slate-400">Selection will not assign you more than this at once</p>
+                      <p className="text-[13px] font-bold text-slate-900 dark:text-white">Max concurrent cases</p>
+                      <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300">Selection will not assign you more than this at once</p>
                     </div>
-                    <span className="text-[16px] font-black text-violet-700">{availability.maxConcurrent}</span>
+                    <span className="text-[16px] font-black text-violet-700 dark:text-violet-400">{availability.maxConcurrent}</span>
                   </div>
                   <input
                     type="range"
@@ -409,9 +499,9 @@ export default function SettingsPage() {
                   />
                 </div>
               </div>
-              <div className={`mt-4 p-4 rounded-xl border flex items-start gap-2.5 ${availability.inPool && availability.state === 'AVAILABLE' ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-100'}`}>
-                {availability.inPool && availability.state === 'AVAILABLE' ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> : <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />}
-                <p className={`text-[11.5px] leading-relaxed ${availability.inPool && availability.state === 'AVAILABLE' ? 'text-emerald-800' : 'text-amber-800'}`}>
+              <div className={`mt-4 p-4 rounded-xl border flex items-start gap-2.5 ${availability.inPool && availability.state === 'AVAILABLE' ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800' : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800'}`}>
+                {availability.inPool && availability.state === 'AVAILABLE' ? <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" /> : <Info className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />}
+                <p className={`text-[11.5px] font-medium leading-relaxed ${availability.inPool && availability.state === 'AVAILABLE' ? 'text-emerald-800 dark:text-emerald-200' : 'text-amber-800 dark:text-amber-200'}`}>
                   {availability.inPool && availability.state === 'AVAILABLE'
                     ? `You are eligible for selection. Selection considers reputation, category relevance, conflict checks, and a cap of ${availability.maxConcurrent} concurrent case(s).`
                     : 'You are currently not eligible for selection. Invitations respect this setting automatically — declining because you are busy never reduces your reputation.'}
@@ -423,15 +513,15 @@ export default function SettingsPage() {
           {/* ── Privacy ── */}
           {section === 'privacy' && (
             <Card className="p-5 max-w-2xl">
-              <h2 className="text-[15px] font-black text-slate-900 mb-1">Privacy Settings</h2>
-              <p className="text-[11px] text-slate-400 mb-4">Control your visibility and data.</p>
+              <h2 className="text-[15px] font-black text-slate-900 dark:text-white mb-1">Privacy Settings</h2>
+              <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 mb-4">Control your visibility and data.</p>
               <ToggleRow label="Public Profile" sub="Anyone can view your profile and badges" on={profilePrefs.privacy.publicProfile} onChange={(v) => setProfilePrefs({ ...profilePrefs, privacy: { ...profilePrefs.privacy, publicProfile: v } })} />
               <ToggleRow label="Show Reputation" sub="Display your reputation score on your profile" on={profilePrefs.privacy.showReputation} onChange={(v) => setProfilePrefs({ ...profilePrefs, privacy: { ...profilePrefs.privacy, showReputation: v } })} />
               <ToggleRow label="Show Activity History" sub="Show your public case activity on your profile" on={profilePrefs.privacy.showHistory} onChange={(v) => setProfilePrefs({ ...profilePrefs, privacy: { ...profilePrefs.privacy, showHistory: v } })} />
               <ToggleRow label="Anonymise my case-study participation" sub="Publish your party role in studies with first name + initial only" on={profilePrefs.privacy.anonymizeCaseStudy} onChange={(v) => setProfilePrefs({ ...profilePrefs, privacy: { ...profilePrefs.privacy, anonymizeCaseStudy: v } })} />
               <ToggleRow label="Do not index my profile" sub="Opt out of platform search results" on={profilePrefs.privacy.doNotIndex} onChange={(v) => setProfilePrefs({ ...profilePrefs, privacy: { ...profilePrefs.privacy, doNotIndex: v } })} />
-              <div className="mt-4 p-3.5 rounded-xl bg-violet-50 border border-violet-100">
-                <p className="text-[11px] text-violet-900 leading-relaxed">
+              <div className="mt-4 p-3.5 rounded-xl bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800/50">
+                <p className="text-[11px] font-medium text-violet-900 dark:text-violet-200 leading-relaxed">
                   <strong>Juror anonymity is always on.</strong> In any jury panel you serve, only a pseudonym (e.g. Juror #A7F2) is ever
                   visible — your name, email, and wallet are protected regardless of these settings.
                 </p>
@@ -443,36 +533,45 @@ export default function SettingsPage() {
           {section === 'preferences' && (
             <div className="grid xl:grid-cols-2 gap-4">
               <Card className="p-5">
-                <h2 className="text-[15px] font-black text-slate-900 mb-1">Appearance &amp; Language</h2>
-                <p className="text-[11px] text-slate-400 mb-4">Customize how Resolvia looks and feels.</p>
-                <label className="text-[11px] font-bold text-slate-500">Theme</label>
-                <div className="grid grid-cols-3 gap-2 mt-1.5 mb-4">
-                  {['Light', 'Dark', 'System'].map((t) => (
-                    <button key={t} onClick={() => setTheme(t)} className={`flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 text-[12px] font-bold transition-all ${theme === t ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}>
-                      {t === 'Light' ? '☀️' : t === 'Dark' ? '🌙' : '🖥️'} {t}
+                <h2 className="text-[15px] font-black text-slate-900 dark:text-white mb-1">Appearance &amp; Language</h2>
+                <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 mb-4">Customize how Resolvia looks and feels.</p>
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Theme</label>
+                <div className="grid grid-cols-3 gap-2.5 mt-1.5 mb-4">
+                  {(['Light', 'Dark', 'System'] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setTheme(t)}
+                      className={`flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 text-[12px] font-bold transition-all cursor-pointer ${
+                        theme === t
+                          ? 'border-violet-500 bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300 shadow-sm'
+                          : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-white/20'
+                      }`}
+                    >
+                      <span className="text-base">{t === 'Light' ? '☀️' : t === 'Dark' ? '🌙' : '🖥️'}</span>
+                      <span>{t}</span>
                     </button>
                   ))}
                 </div>
-                <label className="text-[11px] font-bold text-slate-500">Language</label>
-                <select value={language} onChange={(e) => setLanguage(e.target.value)} className="w-full mt-1.5 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[12px] font-semibold text-slate-600 outline-none">
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Language</label>
+                <select value={language} onChange={(e) => setLanguage(e.target.value)} className="w-full mt-1.5 px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-900 dark:text-white outline-none">
                   <option>English (Default)</option>
                   <option>Hindi</option>
                 </select>
               </Card>
               <Card className="p-5">
-                <h2 className="text-[15px] font-black text-slate-900 mb-4">Data &amp; Account Actions</h2>
-                <button onClick={() => setSection('data')} className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 hover:border-violet-300 transition-colors text-left">
-                  <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center"><Download className="w-4 h-4" /></div>
+                <h2 className="text-[15px] font-black text-slate-900 dark:text-white mb-4">Data &amp; Account Actions</h2>
+                <button onClick={() => setSection('data')} className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-white/10 hover:border-violet-300 dark:hover:border-violet-500/40 transition-colors text-left cursor-pointer">
+                  <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center"><Download className="w-4 h-4" /></div>
                   <div className="flex-1">
-                    <p className="text-[13px] font-bold text-slate-800">Download My Data</p>
-                    <p className="text-[11px] text-slate-400">Get a copy of your data</p>
+                    <p className="text-[13px] font-bold text-slate-900 dark:text-white">Download My Data</p>
+                    <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Get a copy of your data</p>
                   </div>
                 </button>
-                <button onClick={() => setSection('data')} className="w-full flex items-center gap-3 p-3.5 mt-3 rounded-xl border border-rose-100 hover:border-rose-300 bg-rose-50/40 transition-colors text-left">
-                  <div className="w-9 h-9 rounded-lg bg-rose-100 text-rose-500 flex items-center justify-center"><Trash2 className="w-4 h-4" /></div>
+                <button onClick={() => setSection('data')} className="w-full flex items-center gap-3 p-3.5 mt-3 rounded-xl border border-rose-200 dark:border-rose-900/40 bg-rose-50/50 dark:bg-rose-950/30 hover:border-rose-300 dark:hover:border-rose-700 transition-colors text-left cursor-pointer">
+                  <div className="w-9 h-9 rounded-lg bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 flex items-center justify-center"><Trash2 className="w-4 h-4" /></div>
                   <div className="flex-1">
-                    <p className="text-[13px] font-bold text-rose-600">Delete Account</p>
-                    <p className="text-[11px] text-rose-400">Permanently delete your account</p>
+                    <p className="text-[13px] font-bold text-rose-600 dark:text-rose-400">Delete Account</p>
+                    <p className="text-[11px] font-medium text-rose-500 dark:text-rose-400">Permanently delete your account</p>
                   </div>
                 </button>
               </Card>
@@ -482,30 +581,95 @@ export default function SettingsPage() {
           {/* ── Blockchain ── */}
           {section === 'blockchain' && (
             <Card className="p-5 max-w-2xl">
-              <h2 className="text-[15px] font-black text-slate-900 mb-1">Wallet &amp; On-Chain Settings</h2>
-              <p className="text-[11px] text-slate-400 mb-4">Your on-chain identity on the local testnet.</p>
-              {authUser ? (
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 mb-4">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Assigned wallet</p>
-                  <p className="font-mono text-[12.5px] font-bold text-slate-800 mt-1 break-all">{authUser.wallet}</p>
-                  <p className="text-[10.5px] text-slate-400 mt-1.5 flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Connected · funded 0.5 ETH (testnet) · provider-assigned, custodial v1</p>
-                </div>
-              ) : (
-                <div className="p-4 rounded-xl bg-amber-50 border border-amber-100 mb-4">
-                  <p className="text-[11.5px] text-amber-800">Sign in to receive your platform-assigned on-chain identity. No MetaMask required — a wallet is provisioned for you and seeded with testnet funds.</p>
+              <h2 className="text-[15px] font-black text-slate-900 dark:text-white mb-1">Wallet &amp; On-Chain Settings</h2>
+              <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 mb-4">Your on-chain decentralized identity, Web3 wallet, and network settings.</p>
+
+              {walletMsg && (
+                <div className={`p-3.5 rounded-xl mb-4 text-[12px] font-semibold flex items-center justify-between gap-2 ${
+                  walletMsg.type === 'ok'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                    : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                }`}>
+                  <span>{walletMsg.text}</span>
+                  <button onClick={() => setWalletMsg(null)} className="text-slate-400 hover:text-slate-600 text-xs">✕</button>
                 </div>
               )}
+
+              {authUser ? (
+                <div className="space-y-3 mb-5">
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        {authUser.metamaskAddress ? 'Personal Web3 Wallet (MetaMask)' : 'Platform Custodial Key'}
+                      </p>
+                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full">
+                        {authUser.metamaskAddress ? 'MetaMask Linked' : 'Custodial Active'}
+                      </span>
+                    </div>
+                    <p className="font-mono text-[12.5px] font-bold text-slate-800 dark:text-slate-200 mt-1 break-all">
+                      {authUser.metamaskAddress || authUser.wallet}
+                    </p>
+                    <p className="text-[10.5px] text-slate-500 dark:text-slate-400 mt-2 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                      {authUser.metamaskAddress
+                        ? 'Connected to MetaMask · Voting & Case Claims signed with personal address'
+                        : 'Connected · funded 0.5 ETH (testnet) · provider-assigned, custodial v1'}
+                    </p>
+                  </div>
+
+                  {/* Link / Unlink Card */}
+                  <div className="p-4 rounded-xl bg-gradient-to-r from-violet-500/10 via-indigo-500/5 to-transparent border border-violet-200 dark:border-violet-900/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[12.5px] font-black text-slate-800 dark:text-slate-200">
+                        {authUser.metamaskAddress ? 'Manage Personal Web3 Wallet' : 'Link Personal MetaMask Wallet'}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        {authUser.metamaskAddress
+                          ? 'Your account is linked to MetaMask. You can switch to another address or unlink.'
+                          : 'Connect your personal MetaMask address to be used instead of the platform custodial key.'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleLinkMetaMask}
+                        disabled={walletLinking}
+                        className="px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                      >
+                        {walletLinking ? 'Connecting…' : authUser.metamaskAddress ? 'Switch MetaMask' : '🦊 Link MetaMask'}
+                      </button>
+                      {authUser.metamaskAddress && (
+                        <button
+                          type="button"
+                          onClick={handleUnlinkMetaMask}
+                          className="px-3 py-2 rounded-xl border border-rose-200 dark:border-rose-900/50 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          Unlink
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 mb-4">
+                  <p className="text-[11.5px] text-amber-800 dark:text-amber-200">
+                    Sign in to manage your on-chain wallet identity or link your personal MetaMask extension.
+                  </p>
+                </div>
+              )}
+
               <ToggleRow label="Show wallet on my profile" sub="Display the shortened wallet address publicly" on={profilePrefs.blockchain.showWallet} onChange={(v) => setProfilePrefs({ ...profilePrefs, blockchain: { ...profilePrefs.blockchain, showWallet: v } })} />
               <ToggleRow label="Auto-approve low-risk transactions" sub="Skip confirmation for small network interactions" on={profilePrefs.blockchain.autoApprove} onChange={(v) => setProfilePrefs({ ...profilePrefs, blockchain: { ...profilePrefs.blockchain, autoApprove: v } })} />
               <div className="py-3">
-                <p className="text-[13px] font-bold text-slate-800 mb-2">Default network</p>
-                <select value={profilePrefs.blockchain.defaultNetwork} onChange={(e) => setProfilePrefs({ ...profilePrefs, blockchain: { ...profilePrefs.blockchain, defaultNetwork: e.target.value } })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[12px] font-semibold text-slate-600 outline-none">
+                <p className="text-[13px] font-bold text-slate-800 dark:text-slate-200 mb-2">Default network</p>
+                <select value={profilePrefs.blockchain.defaultNetwork} onChange={(e) => setProfilePrefs({ ...profilePrefs, blockchain: { ...profilePrefs.blockchain, defaultNetwork: e.target.value } })} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-900 dark:text-white outline-none">
                   <option>Local Testnet (Hardhat)</option>
-                  <option>Testnet (coming soon)</option>
+                  <option>Ethereum Sepolia Testnet</option>
+                  <option>Polygon Amoy Testnet</option>
                 </select>
               </div>
               <p className="text-[10.5px] text-slate-400 mt-3 flex items-start gap-2">
-                <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" /> ERC-4337 account abstraction for self-custody is planned for a later milestone.
+                <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" /> Both custodial smart keys and self-custodied Web3 wallets (MetaMask) are fully supported.
               </p>
             </Card>
           )}
@@ -514,24 +678,24 @@ export default function SettingsPage() {
           {section === 'data' && (
             <div className="space-y-4 max-w-2xl">
               <Card className="p-5">
-                <h2 className="text-[15px] font-black text-slate-900 mb-1">Export Your Data</h2>
-                <p className="text-[11px] text-slate-400 mb-4">Download a complete copy of your profile, cases, and on-chain activity.</p>
+                <h2 className="text-[15px] font-black text-slate-900 dark:text-white mb-1">Export Your Data</h2>
+                <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 mb-4">Download a complete copy of your profile, cases, and on-chain activity.</p>
                 <div className="space-y-3">
                   {[
                     { t: 'Profile & reputation bundle', s: 'JSON · includes badges, interests, reputation breakdown', size: '~18 KB' },
                     { t: 'Case history archive', s: 'All cases where you are a party or juror (party-side data only)', size: '~64 KB' },
                     { t: 'On-chain activity receipt', s: 'Commitments, reveals, and settlement tx hashes from the local testnet', size: '~9 KB' },
                   ].map((x) => (
-                    <div key={x.t} className="flex items-center gap-3 p-3.5 rounded-xl border border-slate-100">
-                      <div className="w-9 h-9 rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center"><Database className="w-4 h-4" /></div>
+                    <div key={x.t} className="flex items-center gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-white/10">
+                      <div className="w-9 h-9 rounded-lg bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-300 flex items-center justify-center shrink-0"><Database className="w-4 h-4" /></div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[12.5px] font-bold text-slate-800">{x.t}</p>
-                        <p className="text-[10.5px] text-slate-400 truncate">{x.s} · {x.size}</p>
+                        <p className="text-[12.5px] font-bold text-slate-900 dark:text-white">{x.t}</p>
+                        <p className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400 truncate">{x.s} · {x.size}</p>
                       </div>
                       <button
                         type="button"
                         onClick={() => handleDownload(x.t)}
-                        className="px-3.5 py-2 rounded-xl border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-700 text-[11px] font-bold cursor-pointer transition-colors"
+                        className="px-3.5 py-2 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/50 hover:bg-violet-100 dark:hover:bg-violet-900/50 text-violet-700 dark:text-violet-300 text-[11px] font-bold cursor-pointer transition-colors"
                       >
                         Download
                       </button>
@@ -539,23 +703,23 @@ export default function SettingsPage() {
                   ))}
                 </div>
               </Card>
-              <Card className="p-5 border-slate-200">
-                <h2 className="text-[15px] font-black text-slate-800 mb-1">Session State &amp; Local Storage</h2>
-                <p className="text-[11px] text-slate-400 mb-4">
+              <Card className="p-5 border-slate-200 dark:border-white/10">
+                <h2 className="text-[15px] font-black text-slate-900 dark:text-white mb-1">Session State &amp; Local Storage</h2>
+                <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 mb-4">
                   Your platform workspace, active arbitration cases, jury decisions, and token balances are cached locally in this browser.
                   Reset clears local cache and restores original genesis state.
                 </p>
-                <button onClick={resetDemoData} className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs font-bold cursor-pointer">
+                <button onClick={resetDemoData} className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200 text-xs font-bold cursor-pointer transition-colors">
                   Clear Local Cache &amp; Reset State
                 </button>
               </Card>
-              <Card className="p-5 border-rose-100">
-                <h2 className="text-[15px] font-black text-rose-600 mb-1">Danger Zone</h2>
-                <p className="text-[11px] text-slate-400 mb-4">Deleting your account removes your profile. On-chain records are immutable and remain in the ledger (they are public data).</p>
+              <Card className="p-5 border-rose-200 dark:border-rose-900/50">
+                <h2 className="text-[15px] font-black text-rose-600 dark:text-rose-400 mb-1">Danger Zone</h2>
+                <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 mb-4">Deleting your account removes your profile. On-chain records are immutable and remain in the ledger (they are public data).</p>
                 <button
                   type="button"
                   onClick={handleDeleteAccount}
-                  className="px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-xs font-bold cursor-pointer transition-colors"
+                  className="px-4 py-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 text-xs font-bold cursor-pointer transition-colors"
                 >
                   Delete Account
                 </button>
@@ -566,8 +730,8 @@ export default function SettingsPage() {
           {/* ── Accessibility ── */}
           {section === 'accessibility' && (
             <Card className="p-5 max-w-2xl">
-              <h2 className="text-[15px] font-black text-slate-900 mb-1">Accessibility</h2>
-              <p className="text-[11px] text-slate-400 mb-4">Make Resolvia work for you.</p>
+              <h2 className="text-[15px] font-black text-slate-900 dark:text-white mb-1">Accessibility</h2>
+              <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 mb-4">Make Resolvia work for you.</p>
               <ToggleRow label="Reduced motion" sub="Minimise animations and transitions" on={profilePrefs.accessibility.reducedMotion} onChange={(v) => setProfilePrefs({ ...profilePrefs, accessibility: { ...profilePrefs.accessibility, reducedMotion: v } })} />
               <ToggleRow label="Large text" sub="Increase base font size across the app" on={profilePrefs.accessibility.largeText} onChange={(v) => setProfilePrefs({ ...profilePrefs, accessibility: { ...profilePrefs.accessibility, largeText: v } })} />
               <ToggleRow label="High contrast" sub="Stronger borders and text contrast" on={profilePrefs.accessibility.highContrast} onChange={(v) => setProfilePrefs({ ...profilePrefs, accessibility: { ...profilePrefs.accessibility, highContrast: v } })} />
@@ -580,12 +744,12 @@ export default function SettingsPage() {
   );
 }
 
-const IN = 'w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-[12px] outline-none bg-white text-slate-700 focus:border-violet-400 transition-colors';
+const IN = 'w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-[13px] font-medium outline-none bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 shadow-xs transition-all';
 
 function Field({ label, children, className = '' }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={className}>
-      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{label}</label>
+      <label className="text-[10.5px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">{label}</label>
       <div className="mt-1">{children}</div>
     </div>
   );

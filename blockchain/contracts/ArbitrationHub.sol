@@ -240,4 +240,21 @@ contract ArbitrationHub {
             emit JurorRewarded(_caseId, panel[i], perJuror);
         }
     }
+
+    /**
+     * @notice Forward evidence Merkle root to CaseRegistry. Callable by admin or claimant.
+     */
+    function anchorEvidenceBundle(uint256 _caseId, bytes32 _merkleRoot) external {
+        CaseRegistry.CaseRecord memory c = getCase(_caseId);
+        require(msg.sender == admin || msg.sender == c.claimant, "Unauthorized");
+        caseRegistry.anchorEvidence(_caseId, _merkleRoot);
+    }
+
+    /**
+     * @notice Forward AI analysis report hash to CaseRegistry. Callable by admin or oracle.
+     */
+    function anchorAIReportHash(uint256 _caseId, bytes32 _reportHash) external onlyAdmin {
+        caseRegistry.anchorAIReport(_caseId, _reportHash);
+    }
 }
+

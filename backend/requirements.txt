@@ -6,3 +6,5 @@ eth-account>=0.11
 pyjwt>=2.8
 cryptography>=42.0
 google-auth>=2.23
+pymongo>=4.6
+dnspython>=2.4

@@ -4,7 +4,7 @@ import { createHash, webcrypto } from 'node:crypto';
 // The helpers gate their real WebCrypto path on `window.crypto.subtle`.
 // Provide Node's webcrypto as the window shim BEFORE importing the module,
 // so we exercise the REAL SHA-256 code path (not the SSR length/djb2 fallback).
-(globalThis as any).window = { crypto: webcrypto };
+(globalThis as unknown as { window: unknown }).window = { crypto: webcrypto };
 
 const { computeSha256, computeSha256Bytes } = await import('../app/lib/crypto');
 

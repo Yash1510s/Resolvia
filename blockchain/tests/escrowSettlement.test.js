@@ -249,4 +249,34 @@ describe("ArbitrationHub — escrow settlement (Phase A)", function () {
     // Case is SUBMITTED — settle must refuse (finalizeVerdict also guards state)
     await expect(fx.hub.settleCase(caseId)).to.be.revertedWith("Not in voting phase");
   });
+
+  it("anchorEvidenceBundle & anchorAIReportHash: allows claimant/admin and sets roots in CaseRegistry", async () => {
+    const fx = await deployFull();
+    await fx.token.connect(fx.deployer).approve(fx.hub.target, STAKE);
+    const tx = await fx.hub.connect(fx.deployer).initiateDispute("ROOTS-01", fx.respondent.address);
+    const rcpt = await tx.wait();
+    const caseId = caseIdFrom(rcpt);
+
+    const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("evidence-bundle-root"));
+    const reportHash = ethers.keccak256(ethers.toUtf8Bytes("ai-advisory-report"));
+
+    // Claimant can anchor evidence bundle
+    await fx.hub.connect(fx.deployer).anchorEvidenceBundle(caseId, merkleRoot);
+    // Admin can anchor AI report
+    await fx.hub.connect(fx.deployer).anchorAIReportHash(caseId, reportHash);
+
+    const record = await fx.caseRegistry.cases(caseId);
+    expect(record.evidenceMerkleRoot).to.equal(merkleRoot);
+    expect(record.aiReportHash).to.equal(reportHash);
+
+    // Unauthorized party cannot anchor
+    const unauthorized = fx.panel[0];
+    await expect(
+      fx.hub.connect(unauthorized).anchorEvidenceBundle(caseId, merkleRoot)
+    ).to.be.revertedWith("Unauthorized");
+    await expect(
+      fx.hub.connect(unauthorized).anchorAIReportHash(caseId, reportHash)
+    ).to.be.revertedWith("Only admin");
+  });
 });
+

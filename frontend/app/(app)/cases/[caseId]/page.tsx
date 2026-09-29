@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -86,6 +86,8 @@ function CaseDetails({ caseId }: { caseId: string }) {
 
   const [section, setSection] = useState<string>(() => searchParams.get('section') || currentSectionForStatus(getCase(caseId)?.status || 'SUBMITTED'));
   const [analyzing, setAnalyzing] = useState(false);
+  const [analyzingStage, setAnalyzingStage] = useState<number | undefined>();
+  const [analyzingDetail, setAnalyzingDetail] = useState<string | undefined>();
   const [legalOpen, setLegalOpen] = useState(false);
 
   const sections = useMemo(() => (dispute ? visibleSections(dispute.status) : []), [dispute]);
@@ -206,10 +208,18 @@ function CaseDetails({ caseId }: { caseId: string }) {
             <AISection
               dispute={dispute}
               analyzing={analyzing}
-              onRun={() => {
+              stage={analyzingStage}
+              stageDetail={analyzingDetail}
+              onRun={async () => {
                 setAnalyzing(true);
-                runAIAnalysis(dispute.id);
-                setTimeout(() => setAnalyzing(false), 1500);
+                setAnalyzingStage(0);
+                await runAIAnalysis(dispute.id, (stg, dtl) => {
+                  setAnalyzingStage(stg);
+                  if (dtl) setAnalyzingDetail(dtl);
+                });
+                setAnalyzing(false);
+                setAnalyzingStage(undefined);
+                setAnalyzingDetail(undefined);
               }}
             />
           )}
@@ -234,7 +244,10 @@ function CaseDetails({ caseId }: { caseId: string }) {
 }
 
 function DeadlineChip({ label, iso, tone = 'blue' }: { label: string; iso: string; tone?: 'blue' | 'rose' }) {
-  const past = new Date(iso).getTime() < Date.now();
+  const [past, setPast] = useState(false);
+  useEffect(() => {
+    setPast(new Date(iso).getTime() < Date.now());
+  }, [iso]);
   const c =
     tone === 'rose'
       ? past
@@ -388,10 +401,28 @@ function ResponseSection({ dispute, myRole }: { dispute: DisputeCase; myRole: st
   );
 }
 
-function AISection({ dispute, analyzing, onRun }: { dispute: DisputeCase; analyzing: boolean; onRun: () => void }) {
+function AISection({
+  dispute,
+  analyzing,
+  stage,
+  stageDetail,
+  onRun,
+}: {
+  dispute: DisputeCase;
+  analyzing: boolean;
+  stage?: number;
+  stageDetail?: string;
+  onRun: () => void;
+}) {
   return (
     <div className="space-y-4">
-      <AIAnalysisPanel report={dispute.aiAnalysis || null} isAnalyzing={analyzing} onRunAnalysis={onRun} />
+      <AIAnalysisPanel
+        report={dispute.aiAnalysis || null}
+        isAnalyzing={analyzing}
+        activeStage={stage}
+        stageDetail={stageDetail}
+        onRunAnalysis={onRun}
+      />
       {dispute.aiAnalysis && (
         <div className="p-4 rounded-xl bg-violet-50/70 border border-violet-100 flex items-start gap-2.5">
           <AlertTriangle className="w-4 h-4 text-violet-600 shrink-0 mt-0.5" />

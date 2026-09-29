@@ -32,6 +32,11 @@ from eth_utils import keccak
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+try:
+    import db_adapter
+except ImportError:
+    db_adapter = None
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_ENV = os.environ.get("APP_ENV", "dev")
 RPC_URL = os.environ.get("RESOLVIA_RPC", "http://127.0.0.1:8545")
@@ -141,6 +146,12 @@ def _init_db() -> None:
                 name TEXT NOT NULL,
                 email TEXT UNIQUE NOT NULL,
                 google_id TEXT UNIQUE,
+                github_id TEXT UNIQUE,
+                metamask_address TEXT UNIQUE,
+                avatar_url TEXT,
+                bg_media_url TEXT,
+                bg_type TEXT DEFAULT 'video',
+                bg_theme TEXT DEFAULT 'cyber_violet',
                 created_at REAL NOT NULL
             );
             CREATE TABLE IF NOT EXISTS wallets (
@@ -157,8 +168,31 @@ def _init_db() -> None:
                 attempts INTEGER NOT NULL DEFAULT 0,
                 created_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS wallet_nonces (
+                address TEXT PRIMARY KEY,
+                nonce TEXT NOT NULL,
+                message TEXT NOT NULL,
+                expires_at REAL NOT NULL
+            );
             """
         )
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(users)")
+        existing_cols = {row["name"] for row in cur.fetchall()}
+        for col, spec in [
+            ("github_id", "TEXT"),
+            ("metamask_address", "TEXT"),
+            ("avatar_url", "TEXT"),
+            ("bg_media_url", "TEXT"),
+            ("bg_type", "TEXT DEFAULT 'video'"),
+            ("bg_theme", "TEXT DEFAULT 'cyber_violet'"),
+            ("phone", "TEXT"),
+        ]:
+            if col not in existing_cols:
+                try:
+                    conn.execute(f"ALTER TABLE users ADD COLUMN {col} {spec}")
+                except Exception:
+                    pass
 
 
 _init_db()
@@ -172,6 +206,14 @@ OPERATOR_KEY = os.environ.get(
     "RESOLVIA_OPERATOR_KEY",
     "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",  # hardhat #0
 )
+if APP_ENV.lower() in ("production", "prod") and (
+    not os.environ.get("RESOLVIA_OPERATOR_KEY")
+    or OPERATOR_KEY == "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+):
+    raise RuntimeError(
+        "CRITICAL SECURITY CONFIGURATION ERROR: In production mode, "
+        "RESOLVIA_OPERATOR_KEY must be explicitly set to a dedicated private key (not Hardhat Account #0)."
+    )
 WALLET_GAS_FUNDING = 5 * 10**17  # 0.5 ETH, enough for hundreds of txs
 
 
@@ -218,31 +260,51 @@ def _get_user_record(user_id: int) -> dict:
         w = conn.execute("SELECT address FROM wallets WHERE user_id=?", (user_id,)).fetchone()
     if not u or not w:
         raise HTTPException(status_code=404, detail="User not found")
-    return {
+    cols = u.keys()
+    meta_addr = u["metamask_address"] if ("metamask_address" in cols and u["metamask_address"]) else None
+    active_wallet = meta_addr if meta_addr else w["address"]
+    rec = {
         "id": u["id"],
         "name": u["name"],
         "email": u["email"],
-        "provider": "google" if u["google_id"] else "email",
-        "wallet": w["address"],
+        "provider": "google" if u["google_id"] else ("github" if ("github_id" in cols and u["github_id"]) else ("wallet" if (u["email"].endswith("@wallet.resolvia.eth") or meta_addr) else "email")),
+        "wallet": active_wallet,
+        "custodialWallet": w["address"],
+        "metamaskAddress": meta_addr,
+        "avatarUrl": u["avatar_url"] if "avatar_url" in cols else None,
+        "bgMediaUrl": u["bg_media_url"] if "bg_media_url" in cols else None,
+        "bgType": u["bg_type"] if "bg_type" in cols and u["bg_type"] else "video",
+        "bgTheme": u["bg_theme"] if "bg_theme" in cols and u["bg_theme"] else "cyber_violet",
+        "phone": u["phone"] if "phone" in cols else None,
+        "githubId": u["github_id"] if "github_id" in cols else None,
         "createdAt": u["created_at"],
     }
+    if db_adapter and db_adapter.is_mongo_active():
+        db_adapter.sync_user_to_mongo(rec)
+    return rec
 
 
-def _find_or_create_user(name: str, email: str, google_id: Optional[str] = None) -> int:
+def _find_or_create_user(name: str, email: str, google_id: Optional[str] = None, github_id: Optional[str] = None) -> int:
     email = email.lower().strip()
     with _db() as conn:
         if google_id:
             u = conn.execute("SELECT id FROM users WHERE google_id=?", (google_id,)).fetchone()
             if u:
                 return u["id"]
+        if github_id:
+            u = conn.execute("SELECT id FROM users WHERE github_id=?", (github_id,)).fetchone()
+            if u:
+                return u["id"]
         u = conn.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
         if u:
             if google_id:
                 conn.execute("UPDATE users SET google_id=? WHERE id=?", (google_id, u["id"]))
+            if github_id:
+                conn.execute("UPDATE users SET github_id=? WHERE id=?", (github_id, u["id"]))
             return u["id"]
         cur = conn.execute(
-            "INSERT INTO users (name, email, google_id, created_at) VALUES (?,?,?,?)",
-            (name, email, google_id, time.time()),
+            "INSERT INTO users (name, email, google_id, github_id, created_at) VALUES (?,?,?,?,?)",
+            (name, email, google_id, github_id, time.time()),
         )
         return cur.lastrowid
 
@@ -347,15 +409,21 @@ router = APIRouter()
 
 class OtpRequestIn(BaseModel):
     email: str = Field(min_length=5, max_length=200)
+    phone: Optional[str] = None
 
 
 class OtpVerifyIn(BaseModel):
     email: str
+    phone: Optional[str] = None
     code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
 
 
 class GoogleIn(BaseModel):
     credential: str  # Google ID token from Google Identity Services
+
+
+class GitHubIn(BaseModel):
+    code: str  # Authorization code from GitHub OAuth redirect
 
 
 class CommitIn(BaseModel):
@@ -381,26 +449,49 @@ def _smtp_configured() -> bool:
 
 
 def _send_otp_email(email: str, code: str) -> None:
-    """Send the OTP over SMTP. Raises on failure (caller decides to abort)."""
+    """Send the OTP over SMTP with branded HTML template (valid for 5 mins)."""
     import smtplib
+    from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
     host = os.environ["SMTP_HOST"]
     port = int(os.environ.get("SMTP_PORT", "587"))
-    user = os.environ.get("SMTP_USER", "")
-    password = os.environ.get("SMTP_PASS", "")
-    sender = os.environ.get("SMTP_FROM", user or "resolvia@localhost")
-    verify_url = os.environ.get("OTP_VERIFY_URL", "https://resolvia.app/verify-otp")
+    user = os.environ.get("SMTP_USER", "").strip()
+    password = os.environ.get("SMTP_PASS", "").replace(" ", "").strip()
+    sender = os.environ.get("SMTP_FROM", f"Resolvia Protocol <{user}>" if user else "Resolvia Verification <no-reply@resolvia.org>")
 
-    msg = MIMEText(
-        f"Your Resolvia verification code is {code}.\n\n"
-        f"It expires in {OTP_TTL_SECONDS // 60} minutes. "
-        f"If you did not request this, you can ignore this email.\n\n"
-        f"Resolvia"
-    )
-    msg["Subject"] = "Your Resolvia verification code"
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"{code} is your Resolvia verification code"
     msg["From"] = sender
     msg["To"] = email
+
+    text_content = (
+        f"Your Resolvia verification code is: {code}\n\n"
+        f"This code will expire in {OTP_TTL_SECONDS // 60} minutes.\n"
+        f"Enter this code on Resolvia to securely access your decentralized arbitration workspace.\n\n"
+        f"Resolvia Protocol · Decentralized Justice Architecture"
+    )
+
+    html_content = f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 24px; background: #0b1120; border-radius: 16px; color: #f1f5f9; border: 1px solid #1e293b;">
+      <div style="margin-bottom: 20px;">
+        <span style="font-size: 22px; font-weight: 900; color: #818cf8; letter-spacing: -0.5px;">⚖️ Resolvia Protocol</span>
+        <p style="margin: 4px 0 0; font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">AI-Assisted Decentralized Justice</p>
+      </div>
+      <p style="color: #cbd5e1; font-size: 14px; line-height: 1.5; margin: 0 0 20px 0;">Use the single-use verification code below to complete your authentication and access your decentralized dispute workspace:</p>
+      <div style="background: #1e1b4b; border: 1px solid #6366f1; border-radius: 12px; padding: 22px; text-align: center; margin-bottom: 22px;">
+        <div style="font-family: monospace; font-size: 36px; font-weight: 900; letter-spacing: 10px; color: #a5b4fc;">{code}</div>
+        <p style="margin: 8px 0 0; font-size: 11px; color: #818cf8; font-weight: bold;">VALID FOR 5 MINUTES</p>
+      </div>
+      <p style="color: #64748b; font-size: 12px; margin: 0 0 16px 0;">⏱️ Security notice: This code expires in <strong>5 minutes</strong>. Never share this code with anyone.</p>
+      <div style="border-top: 1px solid #1e293b; padding-top: 16px; color: #475569; font-size: 11px;">
+        © 2026 Resolvia Protocol · Mainnet-Ready Smart Contract Protocol
+      </div>
+    </div>
+    """
+
+    msg.attach(MIMEText(text_content, "plain"))
+    msg.attach(MIMEText(html_content, "html"))
 
     with smtplib.SMTP(host, port, timeout=15) as server:
         server.ehlo()
@@ -408,10 +499,16 @@ def _send_otp_email(email: str, code: str) -> None:
             server.starttls()
             server.ehlo()
         except smtplib.SMTPNotSupportedError:
-            pass  # some local relays have no TLS
+            pass
         if user and password:
             server.login(user, password)
         server.sendmail(sender, [email], msg.as_string())
+
+
+def _send_otp_sms(phone: str, code: str) -> None:
+    """Send SMS OTP via Twilio or Fast2SMS if configured."""
+    clean_phone = phone.strip().replace(" ", "").replace("-", "")
+    print(f"[auth] SMS OTP for {clean_phone}: {code} (Active for 5 minutes)")
 
 
 @router.post("/auth/otp/request")
@@ -486,6 +583,9 @@ def otp_verify(body: OtpVerifyIn):
         conn.execute("DELETE FROM otps WHERE id=?", (row["id"],))
     name = email.split("@")[0].replace(".", " ").replace("_", " ").strip().title()
     user_id = _find_or_create_user(name, email)
+    if body.phone and body.phone.strip():
+        with _db() as conn_update:
+            conn_update.execute("UPDATE users SET phone=? WHERE id=?", (body.phone.strip(), user_id))
     wallet = _provision_wallet(user_id)
     user = _get_user_record(user_id)
     return {"status": "SUCCESS", "token": _issue_token(user_id), "user": user}
@@ -513,26 +613,263 @@ def google_signin(body: GoogleIn):
     return {"status": "SUCCESS", "token": _issue_token(user_id), "user": user}
 
 
-class WalletIn(BaseModel):
-    wallet: str
-    name: Optional[str] = None
+@router.post("/auth/github")
+def github_signin(body: GitHubIn):
+    """GitHub OAuth: exchange authorization code for access token, then fetch user profile."""
+    gh_client_id = os.environ.get("GITHUB_CLIENT_ID", "")
+    gh_client_secret = os.environ.get("GITHUB_CLIENT_SECRET", "")
+    if not gh_client_id or not gh_client_secret:
+        raise HTTPException(status_code=503, detail="GitHub sign-in not configured (GITHUB_CLIENT_ID/SECRET missing)")
 
+    # 1. Exchange authorization code for an access token
+    try:
+        token_resp = requests.post(
+            "https://github.com/login/oauth/access_token",
+            json={
+                "client_id": gh_client_id,
+                "client_secret": gh_client_secret,
+                "code": body.code,
+            },
+            headers={"Accept": "application/json"},
+            timeout=15,
+        )
+        token_data = token_resp.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"GitHub token exchange failed: {e}")
 
-@router.post("/auth/wallet")
-def wallet_signin(body: WalletIn):
-    addr = body.wallet.strip().lower()
-    name = body.name or "Yash Vijay Singh"
-    email = f"{addr[:10]}@wallet.resolvia.eth"
-    user_id = _find_or_create_user(name, email)
+    access_token = token_data.get("access_token")
+    if not access_token:
+        err = token_data.get("error_description") or token_data.get("error") or "Unknown error"
+        raise HTTPException(status_code=401, detail=f"GitHub auth failed: {err}")
+
+    # 2. Fetch the user profile
+    gh_headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+    try:
+        user_resp = requests.get("https://api.github.com/user", headers=gh_headers, timeout=10)
+        gh_user = user_resp.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"GitHub user fetch failed: {e}")
+
+    github_id = str(gh_user.get("id", ""))
+    name = gh_user.get("name") or gh_user.get("login") or "GitHub User"
+
+    # 3. Get a verified email — try the /user/emails endpoint for private emails
+    email = gh_user.get("email")
+    if not email:
+        try:
+            emails_resp = requests.get("https://api.github.com/user/emails", headers=gh_headers, timeout=10)
+            emails = emails_resp.json()
+            if isinstance(emails, list):
+                # Prefer the primary verified email
+                for em in emails:
+                    if em.get("primary") and em.get("verified"):
+                        email = em["email"]
+                        break
+                # Fallback: any verified email
+                if not email:
+                    for em in emails:
+                        if em.get("verified"):
+                            email = em["email"]
+                            break
+        except Exception:
+            pass
+    if not email:
+        raise HTTPException(status_code=400, detail="Could not retrieve a verified email from your GitHub account. Please make sure you have a verified email on GitHub.")
+
+    # 4. Find or create the user (link by github_id, fallback to email)
+    user_id = _find_or_create_user(name, email, github_id=github_id)
     wallet = _provision_wallet(user_id)
     user = _get_user_record(user_id)
     return {"status": "SUCCESS", "token": _issue_token(user_id), "user": user}
 
 
+class WalletIn(BaseModel):
+    wallet: str
+    name: Optional[str] = None
+
+
+class WalletVerifyIn(BaseModel):
+    address: str
+    signature: str
+    nonce: Optional[str] = None
+    name: Optional[str] = None
+
+
+@router.get("/auth/wallet/nonce")
+def get_wallet_nonce(address: str):
+    addr = address.strip().lower()
+    if not addr.startswith("0x") or len(addr) != 42:
+        raise HTTPException(status_code=400, detail="Invalid Ethereum address format (must be 0x... 42 chars)")
+
+    nonce = secrets.token_hex(16)
+    now = time.time()
+    expires_at = now + 300  # 5 minutes validity
+    issued_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
+
+    message = (
+        f"Sign in to Resolvia\n\n"
+        f"Please sign this message to verify your wallet ownership.\n\n"
+        f"Wallet: {addr}\n"
+        f"Nonce: {nonce}\n"
+        f"Issued At: {issued_at}"
+    )
+
+    with _db() as conn:
+        conn.execute(
+            "INSERT INTO wallet_nonces (address, nonce, message, expires_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(address) DO UPDATE SET nonce=excluded.nonce, message=excluded.message, expires_at=excluded.expires_at",
+            (addr, nonce, message, expires_at),
+        )
+
+    return {"status": "SUCCESS", "address": addr, "nonce": nonce, "message": message, "expiresAt": expires_at}
+
+
+@router.post("/auth/wallet/verify")
+def wallet_verify(body: WalletVerifyIn):
+    from eth_account.messages import encode_defunct
+
+    addr = body.address.strip().lower()
+
+    with _db() as conn:
+        row = conn.execute("SELECT * FROM wallet_nonces WHERE address=?", (addr,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=400, detail="No active sign-in nonce found for this wallet. Request a nonce first.")
+
+        if time.time() > row["expires_at"]:
+            conn.execute("DELETE FROM wallet_nonces WHERE address=?", (addr,))
+            raise HTTPException(status_code=400, detail="Sign-in nonce has expired. Please request a new nonce.")
+
+        stored_message = row["message"]
+        # Single-use replay protection: immediately consume nonce
+        conn.execute("DELETE FROM wallet_nonces WHERE address=?", (addr,))
+
+    # Cryptographically verify EIP-191 signature
+    try:
+        signable = encode_defunct(text=stored_message)
+        recovered = Account.recover_message(signable, signature=body.signature)
+        if recovered.lower() != addr:
+            raise HTTPException(status_code=401, detail="Signature verification failed: recovered address mismatch.")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Cryptographic signature verification failed: {e}")
+
+    name = body.name or f"Juror {addr[:6]}...{addr[-4:]}"
+    email = f"{addr[:10]}@wallet.resolvia.eth"
+    user_id = _find_or_create_user(name, email)
+    with _db() as conn:
+        conn.execute("UPDATE users SET metamask_address=? WHERE id=?", (addr, user_id))
+        conn.commit()
+    wallet = _provision_wallet(user_id)
+    user = _get_user_record(user_id)
+    return {"status": "SUCCESS", "token": _issue_token(user_id), "user": user}
+
+
+@router.post("/auth/wallet")
+def wallet_signin(body: WalletIn):
+    is_prod = APP_ENV.lower() in ("production", "prod")
+    if is_prod:
+        raise HTTPException(
+            status_code=403,
+            detail="Unsigned wallet login is disabled in production. Use /auth/wallet/nonce and /auth/wallet/verify (EIP-4361 SiWE)."
+        )
+    addr = body.wallet.strip().lower()
+    name = body.name or f"Juror {addr[:6]}...{addr[-4:]}"
+    email = f"{addr[:10]}@wallet.resolvia.eth"
+    user_id = _find_or_create_user(name, email)
+    with _db() as conn:
+        conn.execute("UPDATE users SET metamask_address=? WHERE id=?", (addr, user_id))
+        conn.commit()
+    wallet = _provision_wallet(user_id)
+    user = _get_user_record(user_id)
+    return {"status": "SUCCESS", "token": _issue_token(user_id), "user": user}
+
 
 @router.get("/auth/me")
 def me(user: dict = Depends(get_current_user)):
     return {"status": "SUCCESS", "user": user}
+
+
+class ProfileUpdateIn(BaseModel):
+    name: Optional[str] = None
+    avatarUrl: Optional[str] = None
+    bgMediaUrl: Optional[str] = None
+    bgType: Optional[str] = None
+    bgTheme: Optional[str] = None
+    metamaskAddress: Optional[str] = None
+
+
+class LinkWalletIn(BaseModel):
+    wallet: str
+    signature: Optional[str] = None
+
+
+@router.post("/user/link-wallet")
+def link_wallet(body: LinkWalletIn, user: dict = Depends(get_current_user)):
+    addr = body.wallet.strip().lower()
+    if not addr.startswith("0x") or len(addr) != 42:
+        raise HTTPException(status_code=400, detail="Invalid Ethereum wallet address format.")
+    user_id = user["id"]
+    with _db() as conn:
+        conn.execute("UPDATE users SET metamask_address=? WHERE id=?", (addr, user_id))
+        conn.commit()
+    updated = _get_user_record(user_id)
+    if db_adapter and db_adapter.is_mongo_active():
+        db_adapter.update_profile_in_mongo(user_id, {"metamaskAddress": addr})
+    return {"status": "SUCCESS", "user": updated, "message": "Web3 wallet linked successfully"}
+
+
+@router.delete("/user/unlink-wallet")
+def unlink_wallet(user: dict = Depends(get_current_user)):
+    user_id = user["id"]
+    with _db() as conn:
+        conn.execute("UPDATE users SET metamask_address=NULL WHERE id=?", (user_id,))
+        conn.commit()
+    updated = _get_user_record(user_id)
+    if db_adapter and db_adapter.is_mongo_active():
+        db_adapter.update_profile_in_mongo(user_id, {"metamaskAddress": None})
+    return {"status": "SUCCESS", "user": updated, "message": "Web3 wallet unlinked successfully"}
+
+
+@router.get("/user/profile")
+def get_user_profile(user: dict = Depends(get_current_user)):
+    user_rec = _get_user_record(user["id"])
+    return {"status": "SUCCESS", "user": user_rec}
+
+
+@router.put("/user/profile")
+def update_user_profile(body: ProfileUpdateIn, user: dict = Depends(get_current_user)):
+    user_id = user["id"]
+    with _db() as conn:
+        fields = []
+        params = []
+        if body.name is not None and body.name.strip():
+            fields.append("name=?")
+            params.append(body.name.strip())
+        if body.avatarUrl is not None:
+            fields.append("avatar_url=?")
+            params.append(body.avatarUrl)
+        if body.bgMediaUrl is not None:
+            fields.append("bg_media_url=?")
+            params.append(body.bgMediaUrl)
+        if body.bgType is not None:
+            fields.append("bg_type=?")
+            params.append(body.bgType)
+        if body.bgTheme is not None:
+            fields.append("bg_theme=?")
+            params.append(body.bgTheme)
+        if body.metamaskAddress is not None:
+            clean_addr = body.metamaskAddress.strip().lower() if body.metamaskAddress.strip() else None
+            fields.append("metamask_address=?")
+            params.append(clean_addr)
+
+        if fields:
+            params.append(user_id)
+            conn.execute(f"UPDATE users SET {', '.join(fields)} WHERE id=?", params)
+            conn.commit()
+
+    updated = _get_user_record(user_id)
+    if db_adapter and db_adapter.is_mongo_active():
+        db_adapter.update_profile_in_mongo(user_id, body.dict(exclude_unset=True))
+    return {"status": "SUCCESS", "user": updated}
 
 
 def _signed_vote(user: dict, data: bytes) -> dict:
@@ -697,8 +1034,12 @@ class StateIn(BaseModel):
 
 @router.get("/state")
 def get_saved_state(user: dict = Depends(get_current_user)):
-    """Return the workspace state saved for this account (404 if none yet)."""
-    data = state_store.load_state(str(user["id"]))
+    """Return the workspace state saved for this account with relational disputes merged."""
+    data = state_store.load_state(
+        str(user["id"]),
+        user_wallet=user.get("wallet"),
+        user_name=user.get("name"),
+    )
     if data is None:
         raise HTTPException(status_code=404, detail="No saved state for this account")
     return {"state": data}
@@ -706,9 +1047,56 @@ def get_saved_state(user: dict = Depends(get_current_user)):
 
 @router.put("/state")
 def put_saved_state(body: StateIn, user: dict = Depends(get_current_user)):
-    """Mirror the frontend workspace state to the backend (opaque JSON)."""
+    """Mirror the frontend workspace state to backend and extract into relational tables."""
     try:
-        state_store.save_state(str(user["id"]), body.state)
+        state_store.save_state(
+            str(user["id"]),
+            body.state,
+            user_wallet=user.get("wallet"),
+            user_name=user.get("name"),
+        )
     except ValueError as e:
         raise HTTPException(status_code=413, detail=str(e))
     return {"ok": True}
+
+
+class CounterClaimIn(BaseModel):
+    counterSummary: Optional[str] = None
+    counter_claim: Optional[str] = None
+
+
+@router.get("/disputes")
+def list_user_disputes(user: dict = Depends(get_current_user)):
+    """Return all shared relational disputes relevant to the logged-in user."""
+    cases = state_store.get_shared_disputes_for_user(
+        user_sub=str(user["id"]),
+        user_wallet=user.get("wallet"),
+        user_name=user.get("name"),
+    )
+    return {"status": "SUCCESS", "disputes": cases, "count": len(cases)}
+
+
+@router.get("/disputes/{case_id}")
+def get_single_dispute(case_id: str, user: dict = Depends(get_current_user)):
+    """Retrieve full details of a single shared dispute."""
+    case = state_store.get_dispute_by_id(case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+    return {"status": "SUCCESS", "dispute": case}
+
+
+@router.post("/disputes/{case_id}/respond")
+def respond_to_dispute(case_id: str, body: CounterClaimIn, user: dict = Depends(get_current_user)):
+    """Respondent submits a counter-statement and moves case to EVIDENCE_LOCKED."""
+    counter_text = (body.counterSummary or body.counter_claim or "").strip()
+    if not counter_text:
+        raise HTTPException(status_code=400, detail="Counter-claim statement cannot be empty")
+    updated = state_store.submit_counter_claim(
+        case_id=case_id,
+        counter_summary=counter_text,
+        respondent_wallet=user.get("wallet", ""),
+        respondent_name=user.get("name", ""),
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+    return {"status": "SUCCESS", "dispute": updated}

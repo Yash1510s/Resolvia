@@ -76,8 +76,11 @@ desktop.ini
 
 # backend auth (local)
 backend/secret/
-backend/resolvia_auth.db
-backend/resolvia_auth.db-*
-backend/state.db
-backend/state.db-*
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+backend/resolvia_auth.db*
+backend/auth.db*
+backend/state.db*
 backend/__pycache__/

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import {
   BadgeCheck,
@@ -37,12 +37,19 @@ type Tab = 'overview' | 'activity' | 'cases' | 'contributions' | 'achievements' 
 
 export default function ProfilePage() {
   const { cases, jurorHistory, profilePrefs, setProfilePrefs } = useApp();
-  const { user: authUser } = useAuth();
+  const { user: authUser, updateProfile } = useAuth();
   const [tab, setTab] = useState<Tab>('overview');
   const [editing, setEditing] = useState(false);
+  const [fullName, setFullName] = useState(authUser?.name || (typeof window !== 'undefined' ? localStorage.getItem('resolvia_user_name') : null) || 'Resolvia Arbiter');
   const [form, setForm] = useState(profilePrefs);
   const [avatarImg, setAvatarImg] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (authUser?.name) {
+      setFullName(authUser.name);
+    }
+  }, [authUser?.name]);
 
   const coverThemes = [
     'from-[#101a33] via-[#1c2447] to-[#4a3a7c]',
@@ -105,7 +112,14 @@ export default function ProfilePage() {
     { id: 'settings', label: 'Settings', icon: <Pencil className="w-4 h-4" /> },
   ];
 
-  const saveProfile = () => {
+  const saveProfile = async () => {
+    const trimmed = fullName.trim();
+    if (trimmed && updateProfile) {
+      await updateProfile({ name: trimmed });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('resolvia_user_name', trimmed);
+      }
+    }
     setProfilePrefs(form);
     setEditing(false);
   };
@@ -145,8 +159,8 @@ export default function ProfilePage() {
                   accept="image/*"
                 />
                 <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-violet-500 to-indigo-600 border-4 border-white flex items-center justify-center text-white text-3xl font-black shadow-lg overflow-hidden">
-                  {avatarImg ? (
-                    <img src={avatarImg} alt="Avatar" className="w-full h-full object-cover" />
+                  {(avatarImg || authUser?.avatarUrl || (typeof window !== 'undefined' ? localStorage.getItem('resolvia_custom_avatar') : null)) ? (
+                    <img src={avatarImg || authUser?.avatarUrl || (typeof window !== 'undefined' ? localStorage.getItem('resolvia_custom_avatar') || '' : '')} alt="Avatar" className="w-full h-full object-cover" />
                   ) : (
                     displayName.charAt(0).toUpperCase()
                   )}
@@ -185,11 +199,24 @@ export default function ProfilePage() {
             </div>
             {!editing && <p className="text-[12.5px] text-slate-600 mt-3">{form.bio}</p>}
             {editing && (
-              <div className="mt-3 space-y-3">
-                <div className="grid sm:grid-cols-2 gap-3">
+              <div className="mt-4 space-y-3.5 pt-3 border-t border-slate-100">
+                <div className="grid sm:grid-cols-2 gap-3.5">
+                  <div className="sm:col-span-2">
+                    <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Full Display Name</label>
+                    <input
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="e.g. Yash Vijay Singh"
+                      className="mt-1.5 w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 text-[13px] font-medium outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 shadow-xs transition-all"
+                    />
+                  </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Role</label>
-                    <select value={form.roleType} onChange={(e) => setForm({ ...form, roleType: e.target.value as typeof form.roleType })} className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-[12px] font-semibold outline-none">
+                    <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Role</label>
+                    <select
+                      value={form.roleType}
+                      onChange={(e) => setForm({ ...form, roleType: e.target.value as typeof form.roleType })}
+                      className="mt-1.5 w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-[13px] font-semibold outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 shadow-xs transition-all cursor-pointer"
+                    >
                       <option value="STUDENT">Student</option>
                       <option value="PROFESSIONAL">Professional</option>
                       <option value="INSTITUTION">Institution</option>
@@ -197,35 +224,63 @@ export default function ProfilePage() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Institution</label>
-                    <input value={form.institution} onChange={(e) => setForm({ ...form, institution: e.target.value })} className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-[12px] outline-none" />
+                    <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Institution</label>
+                    <input
+                      value={form.institution}
+                      onChange={(e) => setForm({ ...form, institution: e.target.value })}
+                      placeholder="e.g. University of Mumbai"
+                      className="mt-1.5 w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 text-[13px] font-medium outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 shadow-xs transition-all"
+                    />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Location</label>
-                    <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-[12px] outline-none" />
+                    <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Location</label>
+                    <input
+                      value={form.location}
+                      onChange={(e) => setForm({ ...form, location: e.target.value })}
+                      placeholder="e.g. Mumbai, India"
+                      className="mt-1.5 w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 text-[13px] font-medium outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 shadow-xs transition-all"
+                    />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Email</label>
-                    <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-[12px] outline-none" />
+                    <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Email</label>
+                    <input
+                      value={form.email}
+                      onChange={(e) => setForm({ ...form, email: e.target.value })}
+                      placeholder="e.g. yash82040@gmail.com"
+                      className="mt-1.5 w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 text-[13px] font-medium outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 shadow-xs transition-all"
+                    />
                   </div>
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Bio</label>
-                  <textarea value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} rows={2} className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-[12px] outline-none resize-none" />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Bio</label>
+                    <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">{form.bio.length} / 350</span>
+                  </div>
+                  <textarea
+                    value={form.bio}
+                    onChange={(e) => setForm({ ...form, bio: e.target.value.slice(0, 350) })}
+                    rows={3}
+                    placeholder="Tell us about yourself..."
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 text-[13px] font-medium leading-relaxed outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 shadow-xs resize-none transition-all"
+                  />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Interests (comma separated)</label>
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Interests (comma separated)</label>
                   <input
                     value={form.interests.join(', ')}
                     onChange={(e) => setForm({ ...form, interests: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
-                    className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-[12px] outline-none"
+                    placeholder="e.g. Smart contracts, Consumer protection, Escrow disputes"
+                    className="mt-1.5 w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 text-[13px] font-medium outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 shadow-xs transition-all"
                   />
                 </div>
-                <div className="flex gap-2">
-                  <BtnPrimary onClick={saveProfile} className="!py-2">
+                <div className="flex items-center gap-2.5 pt-1">
+                  <BtnPrimary onClick={saveProfile} className="!py-2.5 !px-5 shadow-sm">
                     <Check className="w-3.5 h-3.5" /> Save Changes
                   </BtnPrimary>
-                  <button onClick={() => setEditing(false)} className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold flex items-center gap-1.5">
+                  <button
+                    onClick={() => setEditing(false)}
+                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
                     <X className="w-3.5 h-3.5" /> Cancel
                   </button>
                 </div>
@@ -456,7 +511,7 @@ export default function ProfilePage() {
               <div className="mt-5 p-4 rounded-xl bg-slate-50 border border-slate-100">
                 <p className="text-[11px] font-black text-slate-600 mb-2">Quick facts</p>
                 <div className="grid sm:grid-cols-2 gap-2 text-[12px]">
-                  <p><span className="text-slate-400 font-semibold">Email:</span> <span className="font-semibold text-slate-700">{profilePrefs.email}</span></p>
+                  <p><span className="text-slate-400 font-semibold">Auth / Email:</span> <span className="font-semibold text-slate-700">{profilePrefs.email?.endsWith('@wallet.resolvia.eth') ? 'Web3 Connected (MetaMask)' : profilePrefs.email}</span></p>
                   <p><span className="text-slate-400 font-semibold">Joined:</span> <span className="font-semibold text-slate-700">{fmtDate(profilePrefs.joinedDate)}</span></p>
                   <p><span className="text-slate-400 font-semibold">Institution:</span> <span className="font-semibold text-slate-700">{profilePrefs.institution}</span></p>
                   <p><span className="text-slate-400 font-semibold">Location:</span> <span className="font-semibold text-slate-700">{profilePrefs.location}</span></p>
@@ -507,7 +562,7 @@ export default function ProfilePage() {
             </div>
             <div className="space-y-3">
               {[
-                { icon: <Mail className="w-4 h-4" />, v: profilePrefs.email },
+                { icon: <Mail className="w-4 h-4" />, v: profilePrefs.email?.endsWith('@wallet.resolvia.eth') ? 'Web3 Connected (MetaMask)' : profilePrefs.email },
                 { icon: <GraduationCap className="w-4 h-4" />, v: profilePrefs.institution },
                 { icon: <MapPin className="w-4 h-4" />, v: profilePrefs.location },
                 { icon: <Calendar className="w-4 h-4" />, v: `Joined on ${fmtDate(profilePrefs.joinedDate)}` },

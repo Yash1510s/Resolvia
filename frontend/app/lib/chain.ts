@@ -109,6 +109,8 @@ export const HUB_ABI = [
   "function settleCase(uint256 caseId)",
   "function REQUIRED_STAKE() view returns (uint256)",
   "function respondentStakes(uint256 caseId) view returns (uint256)",
+  "function anchorEvidenceBundle(uint256 caseId, bytes32 merkleRoot)",
+  "function anchorAIReportHash(uint256 caseId, bytes32 reportHash)",
   "event DisputeInitiated(uint256 indexed caseId, string caseNumber, address indexed claimant, address indexed respondent)",
   "event RespondentStaked(uint256 indexed caseId, address indexed respondent, uint256 stake)",
   "event StakeRescued(uint256 indexed caseId, address indexed claimant, uint256 amount)",
@@ -252,6 +254,76 @@ export async function anchorEvidenceOnChain(
     return { status: 'ANCHORED', txHash: tx.hash, blockNumber: rc?.blockNumber };
   } catch (e: any) {
     return { status: 'FAILED', error: e?.message || 'On-chain anchor failed' };
+  }
+}
+
+// ── Dispute Initiation: real on-chain stake lock & CaseRegistry creation ─────
+export interface InitiateDisputeResult {
+  status: 'INITIATED' | 'FAILED';
+  onChainCaseId?: number;
+  txHash?: string;
+  blockNumber?: number | null;
+  error?: string;
+}
+
+/**
+ * Initiate dispute on-chain via ArbitrationHub.
+ * Locks 500 RSLV anti-spam stake and creates record on CaseRegistry.
+ */
+export async function initiateDisputeOnChain(
+  caseNumber: string,
+  respondentAddr: string,
+  _authToken?: string | null
+): Promise<InitiateDisputeResult> {
+  try {
+    const dep = await fetchDeployment();
+    if (!dep) return { status: 'FAILED', error: 'No local deployment manifest' };
+
+    let resp = respondentAddr.trim();
+    if (!resp.startsWith('0x') || resp.length !== 42) {
+      resp = dep.demoAccounts.respondent;
+    }
+
+    const claimantSigner = getWallet(ACCOUNTS.claimant);
+    const token = new Contract(dep.contracts.ResolviaToken, TOKEN_ABI, claimantSigner);
+    const hub = new Contract(dep.contracts.ArbitrationHub, HUB_ABI, claimantSigner);
+
+    const stake = BigInt(500) * BigInt(10) ** BigInt(18);
+    // 1. Check & approve allowance
+    const allowance = await token.allowance(claimantSigner.address, hub.target);
+    if (BigInt(allowance) < stake) {
+      const aNonce = await getManagedNonce(claimantSigner.address);
+      const atx = await token.approve(hub.target, stake, { nonce: aNonce });
+      await atx.wait();
+    }
+
+    // 2. Call initiateDispute
+    const dNonce = await getManagedNonce(claimantSigner.address);
+    const dtx = await hub.initiateDispute(caseNumber, resp, { nonce: dNonce });
+    const receipt = await dtx.wait();
+
+    // 3. Parse DisputeInitiated event to retrieve caseId
+    let onChainCaseId: number | undefined;
+    for (const log of receipt?.logs || []) {
+      try {
+        const parsed = hub.interface.parseLog(log);
+        if (parsed?.name === 'DisputeInitiated') {
+          onChainCaseId = Number(parsed.args.caseId);
+          break;
+        }
+      } catch {
+        /* skip unrelated log */
+      }
+    }
+
+    return {
+      status: 'INITIATED',
+      onChainCaseId,
+      txHash: dtx.hash,
+      blockNumber: receipt?.blockNumber,
+    };
+  } catch (e: any) {
+    return { status: 'FAILED', error: e?.message || 'initiateDispute failed' };
   }
 }
 

@@ -23,10 +23,25 @@ async function proxy(req: NextRequest, { params }: { params: Promise<{ path: str
 
   try {
     const upstream = await fetch(url, { method: req.method, headers, body, cache: "no-store" });
+    const contentType = upstream.headers.get("content-type") || "application/json";
+
+    // Direct SSE streaming without buffering into text
+    if (contentType.includes("text/event-stream") && upstream.body) {
+      return new NextResponse(upstream.body, {
+        status: upstream.status,
+        headers: {
+          "content-type": "text/event-stream; charset=utf-8",
+          "cache-control": "no-cache, no-transform",
+          "connection": "keep-alive",
+          "x-accel-buffering": "no",
+        },
+      });
+    }
+
     const text = await upstream.text();
     return new NextResponse(text, {
       status: upstream.status,
-      headers: { "content-type": upstream.headers.get("content-type") || "application/json" },
+      headers: { "content-type": contentType },
     });
   } catch (err) {
     return NextResponse.json(

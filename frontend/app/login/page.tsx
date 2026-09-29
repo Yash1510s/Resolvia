@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Mail, ArrowRight, ShieldCheck, TrendingUp, Footprints, RefreshCw, KeyRound, Wallet, ExternalLink, CheckCircle2 } from 'lucide-react';
+import { Mail, Phone, ArrowRight, ShieldCheck, TrendingUp, Footprints, RefreshCw, KeyRound, Wallet, ExternalLink, CheckCircle2, User } from 'lucide-react';
 import { useAuth, type AuthUser } from '../lib/auth-context';
 import {
   AuthLayout,
@@ -16,6 +16,7 @@ import {
   BtnBack,
   DevCodeHint,
   useGoogle,
+  useGitHub,
   SocialRow,
 } from '../components/auth-ui';
 
@@ -27,11 +28,13 @@ export default function LoginPage() {
 
 function LoginInner() {
   const router = useRouter();
-  const { user, requestOtp, verifyOtp, googleLogin } = useAuth();
+  const { user, requestOtp, verifyOtp, googleLogin, walletLogin, updateProfile } = useAuth();
 
   const [method, setMethod] = useState<'email' | 'wallet'>('email');
   const [stage, setStage] = useState<'email' | 'code'>('email');
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [devCode, setDevCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -40,16 +43,24 @@ function LoginInner() {
   const [successUser, setSuccessUser] = useState<AuthUser | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
 
-  const { walletLogin } = useAuth();
-
   const handleGoogle = useCallback(
     async (credential: string) => {
       const r = await googleLogin(credential);
-      if (!r.error) router.push('/dashboard');
+      if (!r.error) {
+        if (fullName.trim()) {
+          await updateProfile({ name: fullName.trim() });
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('resolvia_user_name', fullName.trim());
+            localStorage.setItem('resolvia_name_configured', 'true');
+          }
+        }
+        router.push('/dashboard');
+      }
     },
-    [googleLogin, router]
+    [googleLogin, router, fullName, updateProfile]
   );
   const { ref: googleRef, ready: googleReady, enabled: googleEnabled } = useGoogle(handleGoogle);
+  const { enabled: githubEnabled, login: githubRedirect } = useGitHub();
 
   useEffect(() => {
     if (resendIn <= 0) return;
@@ -63,7 +74,7 @@ function LoginInner() {
     if (!validEmail || busy) return;
     setBusy(true);
     setError(null);
-    const r = await requestOtp(email.trim());
+    const r = await requestOtp(email.trim(), phone.trim());
     setBusy(false);
     if (r.error) {
       setError(r.error);
@@ -79,15 +90,23 @@ function LoginInner() {
     if (code.length !== 6 || busy) return;
     setBusy(true);
     setError(null);
-    const r = await verifyOtp(email.trim(), code);
+    const r = await verifyOtp(email.trim(), code, phone.trim());
     setBusy(false);
     if (r.error) {
       setError(r.error);
       return;
     }
+    const chosenName = fullName.trim() || email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    if (fullName.trim()) {
+      await updateProfile({ name: fullName.trim() });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('resolvia_user_name', fullName.trim());
+        localStorage.setItem('resolvia_name_configured', 'true');
+      }
+    }
     setSuccessUser({
       id: 1,
-      name: email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+      name: chosenName,
       email: email.trim(),
       provider: 'email',
       wallet: '0x3aF3a4898492E92aA827E16b67e059d2E',
@@ -99,7 +118,7 @@ function LoginInner() {
     setBusy(true);
     setError(null);
     try {
-      let addr = '0x3aF3a4898492E92aA827E16b67e059d2E';
+      let addr = '0x3aF3a4898492E92aA827E16b67e059d2E2167d4F';
       if (typeof window !== 'undefined' && (window as any).ethereum) {
         try {
           const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
@@ -108,14 +127,15 @@ function LoginInner() {
           // fallback to demo address if dismissed
         }
       }
-      const r = await walletLogin(addr, 'Yash Vijay Singh');
+      const displayName = `Juror ${addr.slice(0, 6)}...${addr.slice(-4)}`;
+      const r = await walletLogin(addr, displayName);
       if (r.error) {
         setError(r.error);
         setBusy(false);
       } else {
         setSuccessUser({
           id: 1,
-          name: 'Yash Vijay Singh',
+          name: displayName,
           email: `${addr.slice(0, 8)}@wallet.resolvia.eth`,
           provider: 'email',
           wallet: addr,
@@ -249,6 +269,22 @@ function LoginInner() {
         ) : stage === 'email' ? (
           <div className="space-y-4">
             <div>
+              <label className="text-[11px] font-bold text-slate-600 flex items-center justify-between mb-1.5">
+                <span className="flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-slate-400" /> Full Name
+                </span>
+                <span className="text-[10px] text-violet-600 font-semibold">Recommended</span>
+              </label>
+              <input
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="e.g. Yash Vijay Singh"
+                className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-[13px] font-semibold text-slate-900 placeholder:text-slate-400"
+              />
+            </div>
+
+            <div>
               <label className="text-[11px] font-bold text-slate-600 flex items-center gap-1.5 mb-1.5">
                 <Mail className="w-3.5 h-3.5 text-slate-400" /> Email Address
               </label>
@@ -263,11 +299,26 @@ function LoginInner() {
               />
             </div>
 
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 flex items-center justify-between mb-1.5">
+                <span className="flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-slate-400" /> Mobile / Phone Number
+                </span>
+                <span className="text-[10px] text-slate-400 font-normal">Optional</span>
+              </label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+91 98765 43210"
+                className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-[13px] font-semibold text-slate-900 placeholder:text-slate-400"
+              />
+            </div>
+
             <div className="p-3 rounded-xl bg-violet-50/70 border border-violet-100 flex items-start gap-2.5">
               <KeyRound className="w-4 h-4 text-violet-600 shrink-0 mt-0.5" />
               <p className="text-[10.5px] text-violet-800 leading-relaxed">
-                No passwords on Resolvia. We verify it&apos;s you with a one-time 6-digit code, then assign your
-                on-chain identity automatically.
+                We verify it&apos;s you with a one-time 6-digit code (valid for 5 minutes). No passwords needed.
               </p>
             </div>
 
@@ -277,7 +328,7 @@ function LoginInner() {
               {busy ? 'Sending…' : 'Send Code'} {!busy && <ArrowRight className="w-4 h-4" />}
             </BtnPrimary>
 
-            <SocialRow googleRef={googleRef} googleReady={googleReady} googleEnabled={googleEnabled} />
+            <SocialRow googleRef={googleRef} googleReady={googleReady} googleEnabled={googleEnabled} githubEnabled={githubEnabled} onGithubClick={githubRedirect} />
 
             <p className="text-[11px] text-slate-500 text-center pt-1">
               Don&apos;t have an account?{' '}
