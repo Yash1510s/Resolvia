@@ -12,6 +12,9 @@ import {
   ExternalLink,
   Lock,
   Upload,
+  Eye,
+  X,
+  Download,
 } from 'lucide-react';
 import { EvidenceItem } from '../types';
 import { computeSha256, computeSha256Bytes, formatHash } from '../lib/crypto';
@@ -31,6 +34,7 @@ export function EvidenceLocker({ evidence, caseId, onAddEvidenceClick, onUploadF
   const [tamperedReal, setTamperedReal] = useState(false);
   const [verifying, setVerifying] = useState<string | null>(null);
   const [verifyResult, setVerifyResult] = useState<Record<string, 'ANCHORED' | 'NOT_FOUND' | 'UNKNOWN' | 'ERROR'>>({});
+  const [viewingItem, setViewingItem] = useState<EvidenceItem | null>(null);
 
   /** Real tamper: flip one bit of the ORIGINAL bytes (if cached this session) and re-hash. */
   const handleTamperSimulate = async (ev: EvidenceItem) => {
@@ -186,6 +190,14 @@ export function EvidenceLocker({ evidence, caseId, onAddEvidenceClick, onUploadF
                 </button>
 
                 <button
+                  onClick={() => setViewingItem(ev)}
+                  className="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <Eye className="w-3 h-3" />
+                  <span>View File</span>
+                </button>
+
+                <button
                   onClick={() => handleTamperSimulate(ev)}
                   className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
                     isTampered
@@ -256,6 +268,153 @@ export function EvidenceLocker({ evidence, caseId, onAddEvidenceClick, onUploadF
           >
             or generate dispute affidavit template
           </button>
+        </div>
+      </div>
+
+      {/* ── File Preview Modal ── */}
+      {viewingItem && (
+        <FilePreviewModal item={viewingItem} onClose={() => setViewingItem(null)} />
+      )}
+    </div>
+  );
+}
+
+function FilePreviewModal({ item, onClose }: { item: EvidenceItem; onClose: () => void }) {
+  const contentBytes = getEvidenceContent(item.sha256Hash);
+
+  // Render content based on available bytes or file URL / IPFS gateway
+  const textContent = React.useMemo(() => {
+    if (contentBytes) {
+      try {
+        const dec = new TextDecoder('utf-8');
+        return dec.decode(contentBytes);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }, [contentBytes]);
+
+  const objectUrl = React.useMemo(() => {
+    if (item.fileUrl) return item.fileUrl;
+    if (contentBytes) {
+      const blob = new Blob([contentBytes.buffer as ArrayBuffer], { type: item.mimeType || 'application/octet-stream' });
+      return URL.createObjectURL(blob);
+    }
+    if (item.ipfsCid) {
+      return `https://gateway.pinata.cloud/ipfs/${item.ipfsCid}`;
+    }
+    return null;
+  }, [item, contentBytes]);
+
+  // Clean up ObjectURL
+  React.useEffect(() => {
+    return () => {
+      if (objectUrl && objectUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [objectUrl]);
+
+  const isImage = item.mimeType?.startsWith('image/') || /\.(jpg|jpeg|png|gif|svg|webp)$/i.test(item.fileName);
+  const isPdf = item.mimeType === 'application/pdf' || item.fileName.endsWith('.pdf');
+  const isText = item.mimeType?.startsWith('text/') || /\.(txt|log|json|md|js|ts|sol)$/i.test(item.fileName);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto animate-fade-in">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden">
+        {/* Modal Header */}
+        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center shrink-0">
+              <FileText className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-slate-900 truncate">{item.title || item.fileName}</h3>
+              <p className="text-[11px] text-slate-500 truncate">
+                {item.fileName} • {item.fileSize} • Submitted by {item.submittedBy}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {objectUrl && (
+              <a
+                href={objectUrl}
+                download={item.fileName}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download</span>
+              </a>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-500 hover:text-slate-700 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Modal Body */}
+        <div className="p-5 flex-1 overflow-y-auto bg-slate-50/30 flex flex-col items-center justify-center min-h-[300px]">
+          {isImage && objectUrl ? (
+            <div className="max-w-full max-h-[60vh] flex items-center justify-center">
+              {/* eslint-disable-next-html-link */}
+              <img src={objectUrl} alt={item.fileName} className="max-w-full max-h-[60vh] object-contain rounded-xl border border-slate-200 shadow-xs" />
+            </div>
+          ) : isPdf && objectUrl ? (
+            <iframe src={objectUrl} title={item.fileName} className="w-full h-[60vh] rounded-xl border border-slate-200" />
+          ) : isText && textContent ? (
+            <div className="w-full max-h-[60vh] overflow-y-auto p-4 rounded-xl bg-slate-900 text-slate-100 font-mono text-xs leading-relaxed border border-slate-800">
+              <pre className="whitespace-pre-wrap break-all">{textContent}</pre>
+            </div>
+          ) : textContent ? (
+            <div className="w-full max-h-[60vh] overflow-y-auto p-4 rounded-xl bg-slate-900 text-slate-100 font-mono text-xs leading-relaxed border border-slate-800">
+              <pre className="whitespace-pre-wrap break-all">{textContent}</pre>
+            </div>
+          ) : (
+            <div className="text-center p-8 space-y-3 max-w-md">
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-200">
+                <Lock className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-800">Off-Chain Raw Document Streamed</p>
+                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                  The original raw document binary is protected and content-addressed via cryptographic IPFS CID hash.
+                </p>
+              </div>
+              {item.ipfsCid && (
+                <div className="pt-2">
+                  <a
+                    href={`https://gateway.pinata.cloud/ipfs/${item.ipfsCid}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-50 hover:bg-violet-100 text-violet-700 text-xs font-bold transition-all border border-violet-200"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> View on Decentralized IPFS Gateway
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Modal Footer / Forensic Hashes */}
+        <div className="p-4 bg-white border-t border-slate-100 flex items-center justify-between text-[10px] font-mono text-slate-500">
+          <div className="flex items-center gap-2 truncate">
+            <span className="text-slate-400">SHA256:</span>
+            <span className="text-slate-700 font-bold truncate">{item.sha256Hash}</span>
+          </div>
+          {item.ipfsCid && (
+            <div className="flex items-center gap-2 shrink-0 ml-4">
+              <span className="text-slate-400">IPFS CID:</span>
+              <span className="text-slate-700 font-bold">{formatHash(item.ipfsCid, 16)}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>

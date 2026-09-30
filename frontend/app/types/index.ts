@@ -53,6 +53,7 @@ export interface EvidenceItem {
   accessTier: AccessTier;
   encrypted: boolean;
   tamperDetected?: boolean;
+  fileUrl?: string;
   // Real on-chain anchoring (EvidenceRegistry.registerEvidence)
   onChainAnchored?: boolean;
   onChainTx?: string;
