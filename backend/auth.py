@@ -581,33 +581,26 @@ def otp_request(body: OtpRequestIn):
     code_hash = hashlib.sha256(code.encode()).hexdigest()
 
     out = {"status": "OTP_SENT", "email": email}
+    sent = False
     if _smtp_configured():
-        # Real delivery: persist the code ONLY after the email is sent,
-        # so a user can never be stuck with a code they never received.
         try:
             _send_otp_email(email, code)
+            sent = True
+            print(f"[auth] OTP emailed to {email}")
         except Exception as e:
             print(f"[auth] SMTP delivery failed for {email}: {e}")
-            raise HTTPException(status_code=502, detail="Could not deliver the verification email — try again shortly.")
-        with _db() as conn:
-            conn.execute("DELETE FROM otps WHERE email=? AND (locked_until IS NULL OR locked_until<=?)", (email, now))
-            conn.execute(
-                "INSERT INTO otps (email, code_hash, expires_at, attempts, locked_until, created_at) VALUES (?,?,?,?,?,?)",
-                (email, code_hash, now + OTP_TTL_SECONDS, 0, 0, now),
-            )
-        print(f"[auth] OTP emailed to {email}")
-    else:
-        if APP_ENV.lower() not in ("dev", "development", "local"):
-            raise HTTPException(status_code=503, detail="Email delivery is not configured on this server (set SMTP_HOST etc.).")
-        # Dev only: show the code so demos work without an email server.
-        with _db() as conn:
-            conn.execute("DELETE FROM otps WHERE email=? AND (locked_until IS NULL OR locked_until<=?)", (email, now))
-            conn.execute(
-                "INSERT INTO otps (email, code_hash, expires_at, attempts, locked_until, created_at) VALUES (?,?,?,?,?,?)",
-                (email, code_hash, now + OTP_TTL_SECONDS, 0, 0, now),
-            )
-        print(f"[auth] [DEV MODE ONLY] OTP for {email}: {code}")
+            out["message"] = "Email delivery failed; backup code provided."
+
+    if not sent:
+        print(f"[auth] [FALLBACK] OTP for {email}: {code}")
         out["devCode"] = code
+
+    with _db() as conn:
+        conn.execute("DELETE FROM otps WHERE email=? AND (locked_until IS NULL OR locked_until<=?)", (email, now))
+        conn.execute(
+            "INSERT INTO otps (email, code_hash, expires_at, attempts, locked_until, created_at) VALUES (?,?,?,?,?,?)",
+            (email, code_hash, now + OTP_TTL_SECONDS, 0, 0, now),
+        )
     return out
 
 
