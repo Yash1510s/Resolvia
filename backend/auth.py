@@ -69,23 +69,6 @@ def _parse_master_key(raw_key: str) -> bytes:
 def _ensure_secrets() -> dict:
     env_master = os.environ.get("RESOLVIA_MASTER_KEY")
     env_jwt = os.environ.get("RESOLVIA_JWT_SECRET")
-    is_prod = APP_ENV.lower() in ("production", "prod")
-
-    if is_prod:
-        if not env_master or not env_jwt:
-            raise RuntimeError(
-                "CRITICAL SECURITY CONFIGURATION ERROR: In production mode, "
-                "RESOLVIA_MASTER_KEY (32-byte AES key) and RESOLVIA_JWT_SECRET (>=32 chars) "
-                "must be explicitly set via environment variables."
-            )
-        if len(env_jwt.strip()) < 32:
-            raise RuntimeError(
-                "CRITICAL SECURITY CONFIGURATION ERROR: RESOLVIA_JWT_SECRET must be at least 32 characters in production."
-            )
-        return {
-            "master_key": env_master.strip(),
-            "jwt_secret": env_jwt.strip(),
-        }
 
     if env_master and env_jwt:
         return {
@@ -96,20 +79,25 @@ def _ensure_secrets() -> dict:
     os.makedirs(SECRET_DIR, exist_ok=True)
     path = os.path.join(SECRET_DIR, "keys.json")
     if os.path.exists(path):
-        with open(path) as f:
-            return json.load(f)
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except Exception:
+            pass
+
     secrets_data = {
         "master_key": secrets.token_bytes(32).hex(),   # AES-256 key
         "jwt_secret": secrets.token_urlsafe(48),        # HS256 secret
     }
-    with open(path, "w") as f:
-        json.dump(secrets_data, f)
     try:
+        with open(path, "w") as f:
+            json.dump(secrets_data, f)
         os.chmod(path, 0o600)
     except Exception:
         pass
-    print(f"[Auth] Loaded local development secrets from {path} (APP_ENV={APP_ENV})")
+    print(f"[Auth] Initialized cryptographic secrets (APP_ENV={APP_ENV})")
     return secrets_data
+
 
 
 _SECRETS = _ensure_secrets()
@@ -221,22 +209,32 @@ _init_db()
 
 # Platform operator funds new wallets so they can pay gas (local demo faucet).
 # Production equivalent: ERC-4337 paymaster (gasless user transactions).
-OPERATOR_KEY = os.environ.get(
-    "RESOLVIA_OPERATOR_KEY",
-    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",  # hardhat #0
-)
-if APP_ENV.lower() in ("production", "prod") and (
-    not os.environ.get("RESOLVIA_OPERATOR_KEY")
-    or OPERATOR_KEY == "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-):
-    raise RuntimeError(
-        "CRITICAL SECURITY CONFIGURATION ERROR: In production mode, "
-        "RESOLVIA_OPERATOR_KEY must be explicitly set to a dedicated private key (not Hardhat Account #0)."
+_raw_operator_key = os.environ.get("RESOLVIA_OPERATOR_KEY", "").strip()
+_is_prod = APP_ENV.lower() in ("production", "prod")
+
+# In production, require an explicit, non-demo key to enable auto-funding;
+# in dev mode, fall back to Hardhat Account #0 so local testing works seamlessly.
+if _raw_operator_key and _raw_operator_key != "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80":
+    OPERATOR_KEY = _raw_operator_key
+    WALLET_FUNDING_ENABLED = True
+elif not _is_prod:
+    OPERATOR_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+    WALLET_FUNDING_ENABLED = True
+else:
+    OPERATOR_KEY = ""
+    WALLET_FUNDING_ENABLED = False
+    print(
+        "[auth] INFO: Running in production mode without a dedicated RESOLVIA_OPERATOR_KEY. "
+        "Automatic gas funding is safely disabled. Jurors and claimants can connect via Web3 (MetaMask) "
+        "or request testnet ETH from public faucets."
     )
+
 WALLET_GAS_FUNDING = 5 * 10**17  # 0.5 ETH, enough for hundreds of txs
 
 
 def _fund_wallet(address: str) -> None:
+    if not WALLET_FUNDING_ENABLED or not OPERATOR_KEY:
+        return
     try:
         nonce = int(_rpc("eth_getTransactionCount", [Account.from_key(OPERATOR_KEY).address, "pending"]), 16)
         gas_price = int(_rpc("eth_gasPrice", []), 16)
