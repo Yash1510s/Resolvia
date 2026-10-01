@@ -1,0 +1,45 @@
+services:
+  # ─── FastAPI Backend & AI Advisory ───
+  - type: web
+    name: resolvia-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && pip install google-genai httpx slowapi
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: prod
+      - key: ALLOWED_ORIGINS
+        value: "*"
+      - key: RESOLVIA_RPC
+        value: https://ethereum-sepolia-rpc.publicnode.com
+      - key: RESOLVIA_CHAIN_ID
+        value: "11155111"
+      - key: PYTHON_VERSION
+        value: 3.11.9
+
+  # ─── Next.js 16 Frontend ───
+  - type: web
+    name: resolvia-frontend
+    runtime: node
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    plan: free
+    region: oregon
+    envVars:
+      - key: NODE_VERSION
+        value: 20.18.0
+      - key: NEXT_PUBLIC_NETWORK
+        value: sepolia
+      - key: NEXT_PUBLIC_CHAIN_ID
+        value: "11155111"
+      - key: NEXT_PUBLIC_RPC_URL
+        value: https://ethereum-sepolia-rpc.publicnode.com
+      - key: NEXT_PUBLIC_GOOGLE_CLIENT_ID
+        value: 538051232460-ivt400142se1n83599tlmjag2ftriaej.apps.googleusercontent.com
+      - key: NEXT_PUBLIC_GITHUB_CLIENT_ID
+        value: Ov23liGL2GL7JiMfD1kK
