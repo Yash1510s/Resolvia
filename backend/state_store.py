@@ -115,17 +115,21 @@ def _init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_disputes_claimant ON disputes(claimant_wallet);
             CREATE INDEX IF NOT EXISTS idx_disputes_respondent ON disputes(respondent_wallet);
-            CREATE INDEX IF NOT EXISTS idx_disputes_claimant_email ON disputes(claimant_email);
-            CREATE INDEX IF NOT EXISTS idx_disputes_respondent_email ON disputes(respondent_email);
             CREATE INDEX IF NOT EXISTS idx_juror_wallet ON juror_assignments(wallet_address);
             """
         )
-        # Graceful migration for existing SQLite databases
+        # Safe migration for existing SQLite databases
         for col_name in ["claimant_email", "respondent_email", "respondent_contact"]:
             try:
                 c.execute(f"ALTER TABLE disputes ADD COLUMN {col_name} TEXT")
             except sqlite3.OperationalError:
                 pass
+
+        try:
+            c.execute("CREATE INDEX IF NOT EXISTS idx_disputes_claimant_email ON disputes(claimant_email)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_disputes_respondent_email ON disputes(respondent_email)")
+        except sqlite3.OperationalError:
+            pass
 
 
 _init_db()
