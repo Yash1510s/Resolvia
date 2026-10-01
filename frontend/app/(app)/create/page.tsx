@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import {
   ChevronLeft,
   ChevronRight,
@@ -108,48 +107,33 @@ const SUBMIT_PHASES = [
 
 export default function CreateCasePage() {
   const { createCase, recordAnchors, identity } = useApp();
-  const router = useRouter();
 
-  const [step, setStep] = useState(0);
-  const [title, setTitle] = useState('');
-  const [amount, setAmount] = useState('');
-  const [summary, setSummary] = useState('');
-  const [category, setCategory] = useState<DisputeCategory | null>(null);
-  const [respondentName, setRespondentName] = useState('');
-  const [respondentContact, setRespondentContact] = useState('');
-  const [witnesses, setWitnesses] = useState<Witness[]>([]);
+  const [draft] = useState<DraftState | null>(() => loadDraft());
+  const [step, setStep] = useState<number>(() => {
+    const d = draft;
+    return d && (d.title || d.summary || (d.uploads && d.uploads.length > 0))
+      ? Math.max(1, Math.min(d.step || 1, 6))
+      : 0;
+  });
+  const [title, setTitle] = useState(() => draft?.title || '');
+  const [amount, setAmount] = useState(() => draft?.amount || '');
+  const [summary, setSummary] = useState(() => draft?.summary || '');
+  const [category, setCategory] = useState<DisputeCategory | null>(() => draft?.category || null);
+  const [respondentName, setRespondentName] = useState(() => draft?.respondentName || '');
+  const [respondentContact, setRespondentContact] = useState(() => draft?.respondentContact || '');
+  const [witnesses, setWitnesses] = useState<Witness[]>(() => draft?.witnesses || []);
   const [wName, setWName] = useState('');
   const [wContact, setWContact] = useState('');
-  const [outcome, setOutcome] = useState('');
-  const [outcomeNotes, setOutcomeNotes] = useState('');
-  const [uploads, setUploads] = useState<UploadSlot[]>([]);
+  const [outcome, setOutcome] = useState(() => draft?.outcome || '');
+  const [outcomeNotes, setOutcomeNotes] = useState(() => draft?.outcomeNotes || '');
+  const [uploads, setUploads] = useState<UploadSlot[]>(() => (draft?.uploads || []).filter((u) => u.status === 'ANCHORED'));
   const [agree, setAgree] = useState(false);
   const [phase, setPhase] = useState(-1); // -1 = not submitting, 0..4 progress, 5 = done
-  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(() => (draft ? 'restored' : null));
   const [createdCase, setCreatedCase] = useState<DisputeCase | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const claimantName = identity?.name ? `${identity.name} (You)` : 'You';
-
-  // Draft restore (once)
-  useEffect(() => {
-    const d = loadDraft();
-    if (d && (d.title || d.summary || d.uploads.length > 0)) {
-      setStep(Math.max(1, Math.min(d.step, 6)));
-      setTitle(d.title);
-      setAmount(d.amount);
-      setSummary(d.summary);
-      setCategory(d.category);
-      setRespondentName(d.respondentName);
-      setRespondentContact(d.respondentContact);
-      setWitnesses(d.witnesses || []);
-      setOutcome(d.outcome);
-      setOutcomeNotes(d.outcomeNotes);
-      setUploads(d.uploads.filter((u) => u.status === 'ANCHORED'));
-      setDraftSavedAt('just now');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Draft autosave
   useEffect(() => {
@@ -582,7 +566,7 @@ export default function CreateCasePage() {
             </div>
             <div className="mt-5 p-4 rounded-xl bg-violet-50 border border-violet-200 text-[11.5px] text-violet-900 leading-relaxed">
               <strong>Anti-Spam Escrow:</strong> A 250 RSLV stake is locked from each party in the smart contract escrow to deter bad-faith filings.
-              The AI advisory provides <strong>objective advisory analysis</strong> — only the human jury's cryptographic consensus renders the binding outcome.
+              The AI advisory provides <strong>objective advisory analysis</strong> — only the human jury&apos;s cryptographic consensus renders the binding outcome.
             </div>
           </div>
         )}
@@ -788,13 +772,13 @@ export default function CreateCasePage() {
             <div className="p-5 rounded-2xl bg-violet-50/60 border border-violet-100">
               <h4 className="text-[13px] font-bold text-violet-900 flex items-center gap-2"><Coins className="w-4 h-4" /> Escrow Stake</h4>
               <p className="text-[11.5px] text-violet-800/80 mt-2 leading-relaxed">
-                A <strong>250 RSLV</strong> stake from each party is locked in the ArbitrationHub contract. The losing party's stake funds the prevailing party plus jury consensus rewards according to protocol rules.
+                A <strong>250 RSLV</strong> stake from each party is locked in the ArbitrationHub contract. The losing party&apos;s stake funds the prevailing party plus jury consensus rewards according to protocol rules.
               </p>
             </div>
             <label className="flex items-start gap-3 p-4 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
               <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-0.5 w-4 h-4 accent-violet-600" />
               <span className="text-[11.5px] text-slate-800 leading-relaxed">
-                <strong>I confirm</strong> the details above are accurate. I understand this case will be resolved under the Resolvia decentralized jury protocol; the AI advisory is non-binding; the human jury's cryptographic consensus verdict is final and enforced via on-chain smart escrow settlement.
+                <strong>I confirm</strong> the details above are accurate. I understand this case will be resolved under the Resolvia decentralized jury protocol; the AI advisory is non-binding; the human jury&apos;s cryptographic consensus verdict is final and enforced via on-chain smart escrow settlement.
               </span>
             </label>
           </div>

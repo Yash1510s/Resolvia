@@ -17,7 +17,6 @@ import {
   Scale,
   CheckCircle2,
   AlertTriangle,
-  XCircle,
   Eye,
   Lock,
   Download,
@@ -26,7 +25,7 @@ import { useApp } from '../../../lib/app-context';
 import { DisputeCase } from '../../../types';
 import { StatusBadge } from '../../../components/StatusBadge';
 import { StatusStepper } from '../../../components/StatusStepper';
-import { JurorBadge, jurorDisplay } from '../../../components/JurorBadge';
+import { JurorBadge } from '../../../components/JurorBadge';
 import { EvidenceLocker } from '../../../components/EvidenceLocker';
 import { AIAnalysisPanel } from '../../../components/AIAnalysisPanel';
 import { CommitRevealVoting } from '../../../components/CommitRevealVoting';
@@ -56,7 +55,6 @@ const SECTION_ICON: Record<string, React.ReactNode> = {
 
 /** Which section the case is "currently at" (highlighted in the rail). */
 function currentSectionForStatus(status: DisputeCase['status']): string {
-  const i = statusIndex(status);
   if (status === 'DRAFT' || status === 'SUBMITTED') return 'overview';
   if (status === 'RESPONDENT_WINDOW') return 'response';
   if (status === 'EVIDENCE_LOCKED') return 'evidence';
@@ -285,10 +283,11 @@ function CaseDetails({ caseId }: { caseId: string }) {
 }
 
 function DeadlineChip({ label, iso, tone = 'blue' }: { label: string; iso: string; tone?: 'blue' | 'rose' }) {
-  const [past, setPast] = useState(false);
+  const [mounted, setMounted] = useState(false);
   useEffect(() => {
-    setPast(new Date(iso).getTime() < Date.now());
-  }, [iso]);
+    setMounted(true);
+  }, []);
+  const past = mounted ? new Date(iso).getTime() < Date.now() : false;
   const c =
     tone === 'rose'
       ? past
