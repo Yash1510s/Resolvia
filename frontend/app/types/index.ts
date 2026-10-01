@@ -202,11 +202,14 @@ export interface DisputeCase {
   claimant: {
     name: string;
     wallet: string;
+    email?: string;
     stake: number;
   };
   respondent: {
     name: string;
     wallet: string;
+    email?: string;
+    contact?: string;
     stake: number;
     responded: boolean;
   };

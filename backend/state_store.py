@@ -19,6 +19,14 @@ import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+try:
+    from backend.db_adapter import sync_dispute_to_mongo
+except ImportError:
+    try:
+        from db_adapter import sync_dispute_to_mongo
+    except ImportError:
+        sync_dispute_to_mongo = lambda doc: None
+
 _DB_PATH = os.path.join(os.path.dirname(__file__), "state.db")
 _AUTH_DB_PATH = os.path.join(os.path.dirname(__file__), "resolvia_auth.db")
 _lock = threading.Lock()
@@ -52,9 +60,12 @@ def _init_db() -> None:
                 claimant_id TEXT,
                 claimant_name TEXT NOT NULL,
                 claimant_wallet TEXT NOT NULL,
+                claimant_email TEXT,
                 respondent_id TEXT,
                 respondent_name TEXT NOT NULL,
                 respondent_wallet TEXT NOT NULL,
+                respondent_email TEXT,
+                respondent_contact TEXT,
                 dispute_amount TEXT,
                 claim_summary TEXT,
                 relief_sought TEXT,
@@ -104,24 +115,32 @@ def _init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_disputes_claimant ON disputes(claimant_wallet);
             CREATE INDEX IF NOT EXISTS idx_disputes_respondent ON disputes(respondent_wallet);
+            CREATE INDEX IF NOT EXISTS idx_disputes_claimant_email ON disputes(claimant_email);
+            CREATE INDEX IF NOT EXISTS idx_disputes_respondent_email ON disputes(respondent_email);
             CREATE INDEX IF NOT EXISTS idx_juror_wallet ON juror_assignments(wallet_address);
             """
         )
+        # Graceful migration for existing SQLite databases
+        for col_name in ["claimant_email", "respondent_email", "respondent_contact"]:
+            try:
+                c.execute(f"ALTER TABLE disputes ADD COLUMN {col_name} TEXT")
+            except sqlite3.OperationalError:
+                pass
 
 
 _init_db()
 
 
-def _get_user_info_from_auth(sub: str) -> tuple[Optional[str], Optional[str]]:
-    """Helper to query user's assigned wallet and name from auth database."""
+def _get_user_info_from_auth(sub: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Helper to query user's assigned wallet, name, and email from auth database."""
     if not os.path.exists(_AUTH_DB_PATH):
-        return None, None
+        return None, None, None
     try:
         with sqlite3.connect(_AUTH_DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
-                SELECT u.name, w.address 
+                SELECT u.name, u.email, w.address 
                 FROM users u 
                 LEFT JOIN wallets w ON w.user_id = u.id 
                 WHERE u.id = ? OR u.email = ?
@@ -129,16 +148,16 @@ def _get_user_info_from_auth(sub: str) -> tuple[Optional[str], Optional[str]]:
                 (sub, sub),
             ).fetchone()
             if row:
-                return row["address"], row["name"]
+                return row["address"], row["name"], row["email"]
     except Exception:
         pass
-    return None, None
+    return None, None, None
 
 
 # ── Relational Case Extraction & Upsert ───────────────────────────────────────
 
 def save_dispute_relational(c: Dict[str, Any], claimant_sub: Optional[str] = None) -> None:
-    """Save a dispute object into the relational tables."""
+    """Save a dispute object into the relational tables and sync to MongoDB."""
     case_id = str(c.get("id", ""))
     case_number = str(c.get("caseNumber") or f"RSLV-{case_id}")
     if not case_id:
@@ -150,8 +169,18 @@ def save_dispute_relational(c: Dict[str, Any], claimant_sub: Optional[str] = Non
 
     claimant_name = claimant.get("name") or "Claimant"
     claimant_wallet = (claimant.get("wallet") or "").lower()
+    claimant_email = (claimant.get("email") or "").lower()
+
     respondent_name = respondent.get("name") or "Respondent"
     respondent_wallet = (respondent.get("wallet") or "").lower()
+    respondent_contact = str(respondent.get("contact") or respondent.get("email") or "")
+    respondent_email = (respondent.get("email") or respondent_contact or "").lower()
+
+    # If respondent entered email as their wallet identifier, normalize
+    if "@" in respondent_wallet and not respondent_email:
+        respondent_email = respondent_wallet
+    if "@" in claimant_wallet and not claimant_email:
+        claimant_email = claimant_wallet
 
     title = c.get("title") or "Untitled Dispute"
     category = c.get("category") or "GENERAL_EVIDENCE"
@@ -174,12 +203,12 @@ def save_dispute_relational(c: Dict[str, Any], claimant_sub: Optional[str] = Non
                 """
                 INSERT INTO disputes (
                     id, case_number, title, category, status,
-                    claimant_id, claimant_name, claimant_wallet,
-                    respondent_id, respondent_name, respondent_wallet,
+                    claimant_id, claimant_name, claimant_wallet, claimant_email,
+                    respondent_id, respondent_name, respondent_wallet, respondent_email, respondent_contact,
                     dispute_amount, claim_summary, relief_sought,
                     counter_claim_summary, created_at, response_deadline,
                     voting_deadline, on_chain_case_id, raw_json, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     case_number = excluded.case_number,
                     title = excluded.title,
@@ -187,8 +216,11 @@ def save_dispute_relational(c: Dict[str, Any], claimant_sub: Optional[str] = Non
                     status = excluded.status,
                     claimant_name = excluded.claimant_name,
                     claimant_wallet = excluded.claimant_wallet,
+                    claimant_email = excluded.claimant_email,
                     respondent_name = excluded.respondent_name,
                     respondent_wallet = excluded.respondent_wallet,
+                    respondent_email = excluded.respondent_email,
+                    respondent_contact = excluded.respondent_contact,
                     dispute_amount = excluded.dispute_amount,
                     claim_summary = excluded.claim_summary,
                     relief_sought = excluded.relief_sought,
@@ -201,8 +233,8 @@ def save_dispute_relational(c: Dict[str, Any], claimant_sub: Optional[str] = Non
                 """,
                 (
                     case_id, case_number, title, category, status,
-                    claimant_sub, claimant_name, claimant_wallet,
-                    None, respondent_name, respondent_wallet,
+                    claimant_sub, claimant_name, claimant_wallet, claimant_email,
+                    None, respondent_name, respondent_wallet, respondent_email, respondent_contact,
                     amount, summary, relief, counter_summary,
                     created_at, resp_deadline, vote_deadline,
                     on_chain_case_id, raw_json, now
@@ -287,46 +319,90 @@ def save_dispute_relational(c: Dict[str, Any], claimant_sub: Optional[str] = Non
         finally:
             conn.close()
 
+    # Sync to MongoDB Atlas cloud if enabled
+    try:
+        sync_dispute_to_mongo(c)
+    except Exception:
+        pass
+
 
 def get_shared_disputes_for_user(
     user_sub: Optional[str] = None,
     user_wallet: Optional[str] = None,
     user_name: Optional[str] = None,
+    user_email: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Retrieve all shared disputes relevant to this user (as Claimant, Respondent, or Juror)."""
     norm_wallet = (user_wallet or "").strip().lower()
     norm_name = (user_name or "").strip().lower()
+    norm_email = (user_email or "").strip().lower()
+    norm_sub = str(user_sub).strip() if user_sub else ""
 
     with _lock:
         conn = _conn()
         try:
-            # Query all disputes matching wallet, sub, name, or juror empanelling
+            # Query all disputes matching sub, wallet, email, name, or juror empanelling
             query = """
                 SELECT DISTINCT d.* 
                 FROM disputes d
                 LEFT JOIN juror_assignments j ON j.case_id = d.id
                 WHERE (d.claimant_id IS NOT NULL AND d.claimant_id = ?)
                    OR (? != '' AND LOWER(d.claimant_wallet) = ?)
+                   OR (? != '' AND (LOWER(d.claimant_email) = ? OR LOWER(d.claimant_wallet) = ?))
                    OR (? != '' AND LOWER(d.respondent_wallet) = ?)
+                   OR (? != '' AND (LOWER(d.respondent_email) = ? OR LOWER(d.respondent_wallet) = ? OR LOWER(d.respondent_contact) = ?))
                    OR (? != '' AND LOWER(d.respondent_name) = ?)
+                   OR (? != '' AND d.respondent_id = ?)
                    OR (? != '' AND LOWER(j.wallet_address) = ?)
                 ORDER BY d.created_at DESC
             """
             rows = conn.execute(
                 query,
-                (user_sub, norm_wallet, norm_wallet, norm_wallet, norm_wallet, norm_name, norm_name, norm_wallet, norm_wallet),
+                (
+                    norm_sub,
+                    norm_wallet, norm_wallet,
+                    norm_email, norm_email, norm_email,
+                    norm_wallet, norm_wallet,
+                    norm_email, norm_email, norm_email, norm_email,
+                    norm_name, norm_name,
+                    norm_sub, norm_sub,
+                    norm_wallet, norm_wallet,
+                ),
             ).fetchall()
 
             cases = []
             for r in rows:
                 case_obj = json.loads(r["raw_json"])
-                # Compute user's personal role for display in their console
-                if norm_wallet and r["claimant_wallet"].lower() == norm_wallet or (user_sub and r["claimant_id"] == user_sub):
+                c_wallet = (r["claimant_wallet"] or "").lower()
+                c_email = (r["claimant_email"] or "").lower()
+                r_wallet = (r["respondent_wallet"] or "").lower()
+                r_email = (r["respondent_email"] or "").lower()
+                r_contact = (r["respondent_contact"] or "").lower()
+                r_name = (r["respondent_name"] or "").lower()
+
+                is_claimant = (
+                    (norm_sub and r["claimant_id"] == norm_sub)
+                    or (norm_wallet and c_wallet == norm_wallet)
+                    or (norm_email and (c_email == norm_email or c_wallet == norm_email))
+                )
+                is_respondent = (
+                    (norm_sub and r["respondent_id"] == norm_sub)
+                    or (norm_wallet and r_wallet == norm_wallet)
+                    or (norm_email and (r_email == norm_email or r_wallet == norm_email or r_contact == norm_email))
+                    or (norm_name and len(norm_name) >= 3 and (r_name == norm_name or norm_name in r_name))
+                )
+                is_juror = norm_wallet and conn.execute(
+                    "SELECT 1 FROM juror_assignments WHERE case_id=? AND LOWER(wallet_address)=?",
+                    (r["id"], norm_wallet),
+                ).fetchone()
+
+                if is_claimant:
                     case_obj["myRole"] = "CLAIMANT"
-                elif norm_wallet and r["respondent_wallet"].lower() == norm_wallet or (norm_name and r["respondent_name"].lower() == norm_name):
+                elif is_respondent:
                     case_obj["myRole"] = "RESPONDENT"
-                elif norm_wallet and conn.execute("SELECT 1 FROM juror_assignments WHERE case_id=? AND LOWER(wallet_address)=?", (r["id"], norm_wallet)).fetchone():
+                elif is_juror:
                     case_obj["myRole"] = "JUROR"
+
                 cases.append(case_obj)
             return cases
         finally:
@@ -340,17 +416,19 @@ def save_state(
     payload: dict,
     user_wallet: Optional[str] = None,
     user_name: Optional[str] = None,
+    user_email: Optional[str] = None,
 ) -> str:
     """Save full user state and extract cases into relational shared tables."""
     blob = json.dumps(payload)
     if len(blob) > 2_000_000:
         raise ValueError("state too large (max 2 MB)")
 
-    # Auto-resolve wallet & name if not provided
-    if not user_wallet or not user_name:
-        auth_wallet, auth_name = _get_user_info_from_auth(sub)
+    # Auto-resolve wallet, name & email if not provided
+    if not user_wallet or not user_name or not user_email:
+        auth_wallet, auth_name, auth_email = _get_user_info_from_auth(sub)
         user_wallet = user_wallet or auth_wallet
         user_name = user_name or auth_name
+        user_email = user_email or auth_email
 
     now = datetime.now(timezone.utc).isoformat()
     with _lock:
@@ -380,12 +458,14 @@ def load_state(
     sub: str,
     user_wallet: Optional[str] = None,
     user_name: Optional[str] = None,
+    user_email: Optional[str] = None,
 ) -> dict | None:
-    """Load user state and merge shared disputes where this user is respondent or juror."""
-    if not user_wallet or not user_name:
-        auth_wallet, auth_name = _get_user_info_from_auth(sub)
+    """Load user state and merge shared disputes where this user is claimant, respondent or juror."""
+    if not user_wallet or not user_name or not user_email:
+        auth_wallet, auth_name, auth_email = _get_user_info_from_auth(sub)
         user_wallet = user_wallet or auth_wallet
         user_name = user_name or auth_name
+        user_email = user_email or auth_email
 
     with _lock:
         c = _conn()
@@ -397,7 +477,7 @@ def load_state(
     payload = json.loads(row[0]) if row else {}
 
     # Merge shared relational disputes
-    shared_cases = get_shared_disputes_for_user(sub, user_wallet, user_name)
+    shared_cases = get_shared_disputes_for_user(sub, user_wallet, user_name, user_email)
     if shared_cases:
         existing_cases = payload.get("cases", [])
         existing_map = {c["id"]: c for c in existing_cases if "id" in c}
@@ -407,12 +487,13 @@ def load_state(
             if cid not in existing_map:
                 existing_cases.insert(0, sc)
             else:
-                # Retain whichever has latest updates
+                # Update role and preserve shared updates
                 existing_map[cid].update(sc)
 
         payload["cases"] = existing_cases
 
     return payload if payload else None
+
 
 
 # ── Direct Relational Operations (REST Support) ──────────────────────────────

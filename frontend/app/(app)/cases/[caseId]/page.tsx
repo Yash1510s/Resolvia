@@ -82,15 +82,52 @@ function CaseDetails({ caseId }: { caseId: string }) {
   const { getCase, identity, myJurorPseudonym, runAIAnalysis } = useApp();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const dispute = getCase(caseId);
+  const inMemoryDispute = getCase(caseId);
 
-  const [section, setSection] = useState<string>(() => searchParams.get('section') || currentSectionForStatus(getCase(caseId)?.status || 'SUBMITTED'));
+  const [fetchedCase, setFetchedCase] = useState<DisputeCase | null>(null);
+  const [loadingCase, setLoadingCase] = useState(!inMemoryDispute);
+
+  useEffect(() => {
+    if (!inMemoryDispute) {
+      let cancelled = false;
+      const token = typeof window !== 'undefined' ? window.localStorage.getItem('resolvia_token') : null;
+      fetch(`/api/backend/disputes/${caseId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (!cancelled && data?.dispute) {
+            setFetchedCase(data.dispute);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) setLoadingCase(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+  }, [caseId, inMemoryDispute]);
+
+  const dispute = inMemoryDispute || fetchedCase;
+
+  const [section, setSection] = useState<string>(() => searchParams.get('section') || currentSectionForStatus(dispute?.status || 'SUBMITTED'));
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzingStage, setAnalyzingStage] = useState<number | undefined>();
   const [analyzingDetail, setAnalyzingDetail] = useState<string | undefined>();
   const [legalOpen, setLegalOpen] = useState(false);
 
   const sections = useMemo(() => (dispute ? visibleSections(dispute.status) : []), [dispute]);
+
+  if (loadingCase && !dispute) {
+    return (
+      <div className="p-12 rounded-2xl bg-white border border-slate-200 text-center space-y-3">
+        <div className="w-8 h-8 border-2 border-violet-600 border-t-transparent rounded-full animate-spin mx-auto" />
+        <p className="text-xs font-semibold text-slate-600">Retrieving case record from decentralized ledger…</p>
+      </div>
+    );
+  }
 
   if (!dispute) {
     return (
@@ -104,7 +141,11 @@ function CaseDetails({ caseId }: { caseId: string }) {
     );
   }
 
-  const myRole = dispute.myRole || 'CLAIMANT';
+  const myRole = dispute.myRole || (
+    identity.email && (dispute.respondent?.email === identity.email || dispute.respondent?.contact === identity.email)
+      ? 'RESPONDENT'
+      : (identity.wallet && dispute.respondent?.wallet?.toLowerCase() === identity.wallet.toLowerCase() ? 'RESPONDENT' : 'CLAIMANT')
+  );
   const activeSection = sections.find((s) => s.id === section) ? section : 'overview';
 
   const myJuror = dispute.jurors.find((j) => j.walletAddress === identity.wallet) ||

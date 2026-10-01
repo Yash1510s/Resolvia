@@ -286,9 +286,16 @@ export default function CreateCasePage() {
       createdAt: now,
       responseDeadline: new Date(Date.now() + 2 * 86_400_000).toISOString(),
       votingDeadline: new Date(Date.now() + 6 * 86_400_000).toISOString(),
-      claimant: { name: claimantName.replace(' (You)', ''), wallet: identity.wallet, stake: 250 },
+      claimant: {
+        name: claimantName.replace(' (You)', ''),
+        wallet: identity.wallet,
+        email: identity.email || undefined,
+        stake: 250,
+      },
       respondent: {
         name: respondentName,
+        contact: respondentContact.trim(),
+        email: respondentContact.includes('@') ? respondentContact.trim() : undefined,
         wallet: respondentContact.trim().startsWith('0x') ? respondentContact.trim() : (respondentContact.trim() || '0x2281…99aa'),
         stake: 0,
         responded: false,
@@ -366,6 +373,22 @@ export default function CreateCasePage() {
     if (onChainInitTx) {
       newCase.auditTrail[0].txHash = onChainInitTx;
       newCase.auditTrail[0].details = `Case ${newCase.caseNumber} initiated on-chain (ArbitrationHub). 500 RSLV stake locked in escrow; ${newCase.evidence.length} evidence item(s) anchored on-chain with IPFS CIDs.`;
+    }
+
+    // Persist to backend and dispatch respondent notification email immediately
+    try {
+      if (token) {
+        await fetch('/api/backend/disputes', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ case: newCase }),
+        });
+      }
+    } catch (err) {
+      console.warn('Direct backend dispute registration warning:', err);
     }
 
     createCase(newCase);

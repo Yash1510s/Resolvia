@@ -28,8 +28,7 @@ import jwt
 import requests
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from eth_account import Account
-from eth_utils import keccak
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 try:
@@ -556,6 +555,129 @@ def _send_otp_sms(phone: str, code: str) -> None:
     """Send SMS OTP via Twilio or Fast2SMS if configured."""
     clean_phone = phone.strip().replace(" ", "").replace("-", "")
     print(f"[auth] SMS OTP for {clean_phone}: {code} (Active for 5 minutes)")
+
+
+def _send_dispute_filed_email(
+    respondent_email: str,
+    claimant_name: str,
+    case_number: str,
+    case_title: str,
+    claim_summary: str,
+    dispute_amount: str,
+    case_id: str,
+) -> None:
+    """Send dispute notice to respondent via SMTP with direct case link and 48h deadline."""
+    if "SMTP_HOST" not in os.environ:
+        print(f"[Email Notice] SMTP not configured; skipping email to {respondent_email}")
+        return
+
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    host = os.environ["SMTP_HOST"]
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    user = os.environ.get("SMTP_USER", "").strip()
+    password = os.environ.get("SMTP_PASS", "").replace(" ", "").strip()
+    sender = os.environ.get("SMTP_FROM", f"Resolvia Protocol <{user}>" if user else "Resolvia Disputes <no-reply@resolvia.org>")
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"Action Required: Dispute Filed Against You [{case_number}]"
+    msg["From"] = sender
+    msg["To"] = respondent_email
+
+    case_url = f"https://resolvia-nine.vercel.app/cases/{case_id}"
+
+    text_content = (
+        f"Resolvia Protocol — Formal Notice of Dispute\n\n"
+        f"A dispute has been formally registered against you on the Resolvia Protocol.\n\n"
+        f"Case Number: {case_number}\n"
+        f"Title: {case_title}\n"
+        f"Filed By: {claimant_name}\n"
+        f"Disputed Amount / Relief: {dispute_amount}\n"
+        f"Summary of Claim: {claim_summary}\n\n"
+        f"You have a 48-hour response window to review the claim, inspect cryptographic evidence, and submit your counter-statement.\n\n"
+        f"Access your case dashboard here: {case_url}\n\n"
+        f"Resolvia Protocol · Decentralized Justice Architecture"
+    )
+
+    html_content = f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; padding: 32px 24px; background: #0b1120; border-radius: 16px; color: #f1f5f9; border: 1px solid #1e293b;">
+      <div style="margin-bottom: 24px; border-bottom: 1px solid #1e293b; padding-bottom: 16px;">
+        <span style="font-size: 22px; font-weight: 900; color: #818cf8; letter-spacing: -0.5px;">⚖️ Resolvia Protocol</span>
+        <p style="margin: 4px 0 0; font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Official Notice of Dispute Filing</p>
+      </div>
+
+      <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 10px; padding: 14px 18px; margin-bottom: 20px;">
+        <p style="margin: 0; font-size: 13px; font-weight: 600; color: #f87171;">⚠️ 48-Hour Response Window Active</p>
+        <p style="margin: 4px 0 0; font-size: 12px; color: #cbd5e1;">A claimant has initiated an on-chain arbitration proceeding naming you as the Respondent.</p>
+      </div>
+
+      <div style="background: #1e1b4b; border: 1px solid #4338ca; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+          <tr>
+            <td style="color: #94a3b8; padding: 6px 0; width: 35%;">Case Number:</td>
+            <td style="color: #a5b4fc; font-weight: 700; font-family: monospace;">{case_number}</td>
+          </tr>
+          <tr>
+            <td style="color: #94a3b8; padding: 6px 0;">Case Title:</td>
+            <td style="color: #f1f5f9; font-weight: 600;">{case_title}</td>
+          </tr>
+          <tr>
+            <td style="color: #94a3b8; padding: 6px 0;">Claimant:</td>
+            <td style="color: #f1f5f9;">{claimant_name}</td>
+          </tr>
+          <tr>
+            <td style="color: #94a3b8; padding: 6px 0;">Dispute Amount:</td>
+            <td style="color: #38bdf8; font-weight: 700;">{dispute_amount}</td>
+          </tr>
+        </table>
+        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid #312e81;">
+          <p style="margin: 0 0 4px 0; font-size: 11px; text-transform: uppercase; color: #818cf8; font-weight: 700;">Claim Summary</p>
+          <p style="margin: 0; font-size: 13px; color: #cbd5e1; line-height: 1.4;">{claim_summary}</p>
+        </div>
+      </div>
+
+      <p style="color: #cbd5e1; font-size: 13px; line-height: 1.5; margin: 0 0 20px 0;">
+        You can log in to Resolvia with this email address (<strong>{respondent_email}</strong>) to inspect the claimant's evidence, submit your counter-evidence, or resolve the claim.
+      </p>
+
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="{case_url}" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #ffffff; padding: 14px 32px; border-radius: 10px; font-weight: 700; font-size: 14px; text-decoration: none; display: inline-block; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);">
+          Review & Respond to Dispute →
+        </a>
+      </div>
+
+      <div style="border-top: 1px solid #1e293b; padding-top: 16px; color: #475569; font-size: 11px; text-align: center;">
+        © 2026 Resolvia Protocol · Decentralized Justice Architecture<br/>
+        This is an automated notification. Cryptographic records and hashes anchored on Ethereum Sepolia.
+      </div>
+    </div>
+    """
+
+    msg.attach(MIMEText(text_content, "plain"))
+    msg.attach(MIMEText(html_content, "html"))
+
+    try:
+        if int(port) == 465:
+            with smtplib.SMTP_SSL(host, 465, timeout=10) as server:
+                if user and password:
+                    server.login(user, password)
+                server.sendmail(sender, [respondent_email], msg.as_string())
+        else:
+            with smtplib.SMTP(host, int(port), timeout=10) as server:
+                server.ehlo()
+                try:
+                    server.starttls()
+                    server.ehlo()
+                except smtplib.SMTPNotSupportedError:
+                    pass
+                if user and password:
+                    server.login(user, password)
+                server.sendmail(sender, [respondent_email], msg.as_string())
+        print(f"[Email Notice] Successfully dispatched dispute notice to {respondent_email} for case {case_number}")
+    except Exception as e:
+        print(f"[Email Notice] Failed to send dispute notification email to {respondent_email}: {e}")
 
 
 @router.post("/auth/otp/request")
@@ -1164,6 +1286,7 @@ def get_saved_state(user: dict = Depends(get_current_user)):
         str(user["id"]),
         user_wallet=user.get("wallet"),
         user_name=user.get("name"),
+        user_email=user.get("email"),
     )
     if data is None:
         raise HTTPException(status_code=404, detail="No saved state for this account")
@@ -1179,6 +1302,7 @@ def put_saved_state(body: StateIn, user: dict = Depends(get_current_user)):
             body.state,
             user_wallet=user.get("wallet"),
             user_name=user.get("name"),
+            user_email=user.get("email"),
         )
     except ValueError as e:
         raise HTTPException(status_code=413, detail=str(e))
@@ -1197,8 +1321,72 @@ def list_user_disputes(user: dict = Depends(get_current_user)):
         user_sub=str(user["id"]),
         user_wallet=user.get("wallet"),
         user_name=user.get("name"),
+        user_email=user.get("email"),
     )
     return {"status": "SUCCESS", "disputes": cases, "count": len(cases)}
+
+
+@router.post("/disputes")
+def create_new_dispute(
+    body: Dict[str, Any],
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+):
+    """Directly register a dispute, save relationally & dispatch notification email to respondent."""
+    case_data = body.get("case") if "case" in body and isinstance(body.get("case"), dict) else body
+    if not isinstance(case_data, dict) or not case_data.get("id"):
+        raise HTTPException(status_code=400, detail="Invalid dispute case payload: missing case ID")
+
+    # Stamp claimant details from authenticated session if empty
+    claimant = case_data.setdefault("claimant", {})
+    if not claimant.get("email") and user.get("email"):
+        claimant["email"] = user.get("email")
+    if not claimant.get("wallet") and user.get("wallet"):
+        claimant["wallet"] = user.get("wallet")
+    if not claimant.get("name") and user.get("name"):
+        claimant["name"] = user.get("name")
+
+    # Persist in relational tables & MongoDB
+    try:
+        state_store.save_dispute_relational(case_data, claimant_sub=str(user["id"]))
+    except Exception as e:
+        print(f"[Disputes] Error saving dispute relationally: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to persist dispute: {e}")
+
+    # Also prepend into claimant's saved state
+    try:
+        current_state = state_store.load_state(str(user["id"]), user.get("wallet"), user.get("name"), user.get("email")) or {}
+        user_cases = current_state.get("cases", [])
+        # Avoid duplicate
+        user_cases = [c for c in user_cases if c.get("id") != case_data["id"]]
+        user_cases.insert(0, case_data)
+        current_state["cases"] = user_cases
+        state_store.save_state(str(user["id"]), current_state, user.get("wallet"), user.get("name"), user.get("email"))
+    except Exception as e:
+        print(f"[Disputes] Claimant state update note: {e}")
+
+    # Dispatch respondent email notification in background
+    respondent = case_data.get("respondent") or {}
+    resp_email = respondent.get("email") or respondent.get("contact") or ""
+    if "@" in resp_email:
+        background_tasks.add_task(
+            _send_dispute_filed_email,
+            respondent_email=resp_email.strip(),
+            claimant_name=claimant.get("name") or "Claimant",
+            case_number=case_data.get("caseNumber") or case_data["id"],
+            case_title=case_data.get("title") or "Dispute Filing",
+            claim_summary=case_data.get("claimSummary") or "A dispute has been initiated against you.",
+            dispute_amount=case_data.get("disputeAmount") or "N/A",
+            case_id=case_data["id"],
+        )
+
+    return {
+        "status": "SUCCESS",
+        "caseId": case_data["id"],
+        "caseNumber": case_data.get("caseNumber"),
+        "respondentNotified": "@" in resp_email,
+    }
+
 
 
 @router.get("/disputes/{case_id}")

@@ -135,17 +135,44 @@ function pickVote(): VoteChoice {
 const STATE_KEY = 'resolvia_demo_state_v1';
 const DAY_MS = 86_400_000;
 
-function rebaseline(cases: DisputeCase[], userWallet?: string | null): DisputeCase[] {
+function rebaseline(cases: DisputeCase[], user?: any): DisputeCase[] {
   const now = Date.now();
-  const normalizedUser = userWallet ? userWallet.toLowerCase() : null;
+  const normalizedWallet = typeof user === 'string'
+    ? user.toLowerCase().trim()
+    : user?.wallet?.toLowerCase()?.trim() || null;
+  const normalizedEmail = typeof user === 'object' && user?.email
+    ? user.email.toLowerCase().trim()
+    : (typeof user === 'string' && user.includes('@') ? user.toLowerCase().trim() : null);
+  const normalizedName = typeof user === 'object' && user?.name
+    ? user.name.toLowerCase().trim()
+    : null;
+
   return cases.map((c) => {
     let myRole = c.myRole;
-    if (normalizedUser) {
-      if (c.claimant?.wallet && c.claimant.wallet.toLowerCase() === normalizedUser) {
+    if (normalizedWallet || normalizedEmail || normalizedName) {
+      const cClaimantWallet = c.claimant?.wallet?.toLowerCase()?.trim();
+      const cClaimantEmail = (c.claimant?.email || (cClaimantWallet?.includes('@') ? cClaimantWallet : ''))?.toLowerCase()?.trim();
+
+      const cRespWallet = c.respondent?.wallet?.toLowerCase()?.trim();
+      const cRespEmail = (c.respondent?.email || c.respondent?.contact || (cRespWallet?.includes('@') ? cRespWallet : ''))?.toLowerCase()?.trim();
+      const cRespName = c.respondent?.name?.toLowerCase()?.trim();
+
+      const isClaimant =
+        (normalizedWallet && cClaimantWallet === normalizedWallet) ||
+        (normalizedEmail && (cClaimantEmail === normalizedEmail || cClaimantWallet === normalizedEmail));
+
+      const isRespondent =
+        (normalizedWallet && cRespWallet === normalizedWallet) ||
+        (normalizedEmail && (cRespEmail === normalizedEmail || cRespWallet === normalizedEmail)) ||
+        (normalizedName && normalizedName.length >= 3 && cRespName && (cRespName === normalizedName || cRespName.includes(normalizedName) || normalizedName.includes(cRespName)));
+
+      const isJuror = normalizedWallet && c.jurors?.some((j) => j.walletAddress && j.walletAddress.toLowerCase()?.trim() === normalizedWallet);
+
+      if (isClaimant) {
         myRole = 'CLAIMANT';
-      } else if (c.respondent?.wallet && c.respondent.wallet.toLowerCase() === normalizedUser) {
+      } else if (isRespondent) {
         myRole = 'RESPONDENT';
-      } else if (c.jurors?.some((j) => j.walletAddress && j.walletAddress.toLowerCase() === normalizedUser)) {
+      } else if (isJuror) {
         myRole = 'JUROR';
       }
     }
@@ -305,7 +332,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // The account becomes the source of truth: on login we hydrate from the
   // backend (or seed it on first login), then mirror every change back with a
   // debounce. Guests keep working from localStorage only.
-  const authSub = authUser?.wallet || null;
+  const authSub = authUser?.email || authUser?.wallet || (authUser?.id ? String(authUser.id) : null);
   const snapshotRef = useRef<{
     cases: DisputeCase[];
     invitations: JuryInvitation[];
@@ -352,7 +379,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const data = await res.json();
           const st = data?.state;
           if (st) {
-            if (Array.isArray(st.cases) && st.cases.length) setCases(rebaseline(st.cases, authSub));
+            if (Array.isArray(st.cases) && st.cases.length) setCases(rebaseline(st.cases, authUser));
             if (Array.isArray(st.invitations)) setInvitations(st.invitations);
             if (Array.isArray(st.notifications)) setNotifications(st.notifications);
             if (typeof st.rslvBalance === 'number') setRslvBalance(st.rslvBalance);
@@ -369,14 +396,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [authSub]);
+  }, [authSub, authUser]);
 
   // Dynamically update roles for active account
   useEffect(() => {
-    if (authSub) {
-      setCases((prev) => rebaseline(prev, authSub));
+    if (authUser) {
+      setCases((prev) => rebaseline(prev, authUser));
     }
-  }, [authSub]);
+  }, [authUser]);
 
   useEffect(() => {
     if (!authSub || hydratedRef.current !== authSub) return;
@@ -409,7 +436,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         email: authUser.email,
         wallet: authUser.wallet,
         provider: authUser.provider,
-        sub: authUser.wallet.slice(0, 6) + '…' + authUser.wallet.slice(-4),
+        sub: authUser.wallet ? `${authUser.wallet.slice(0, 6)}…${authUser.wallet.slice(-4)}` : (authUser.email || 'user'),
       };
     }
     return DEMO_IDENTITY;
@@ -452,6 +479,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         caseId: c.id,
         link: `/cases/${c.id}`,
       });
+
+      // Immediate backend persistence and respondent notification
+      try {
+        const token = typeof window !== 'undefined' ? window.localStorage.getItem('resolvia_token') : null;
+        if (token) {
+          fetch('/api/backend/disputes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ case: c }),
+          }).catch((err) => console.warn('Background dispute persist note:', err));
+        }
+      } catch {}
     },
     [pushNotification]
   );

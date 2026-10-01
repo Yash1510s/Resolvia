@@ -92,3 +92,19 @@ def update_profile_in_mongo(user_id: int, updates: Dict[str, Any]):
         users_col.update_one({"userId": user_id}, {"$set": clean_updates})
     except Exception as e:
         print(f"[Database] MongoDB profile update warning: {e}")
+
+def sync_dispute_to_mongo(dispute_dict: Dict[str, Any]):
+    """Sync or upsert a dispute record to MongoDB Atlas."""
+    if not is_mongo_active():
+        return
+    try:
+        disputes_col = _mongo_db["disputes"]
+        case_id = str(dispute_dict.get("id") or "")
+        if not case_id:
+            return
+        doc = dict(dispute_dict)
+        doc["updatedAt"] = time.time()
+        disputes_col.update_one({"id": case_id}, {"$set": doc}, upsert=True)
+    except Exception as e:
+        print(f"[Database] MongoDB dispute sync warning: {e}")
+
