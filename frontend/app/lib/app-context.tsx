@@ -180,6 +180,8 @@ function rebaseline(cases: DisputeCase[], user?: any): DisputeCase[] {
         myRole = 'RESPONDENT';
       } else if (isJuror) {
         myRole = 'JUROR';
+      } else {
+        myRole = undefined;
       }
     }
     let next: DisputeCase = { ...c, myRole };
@@ -433,11 +435,53 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, [authSub, authUser]);
 
-  // Dynamically update roles for active account
+  // Dynamically update roles for active account & sync protocol disputes
   useEffect(() => {
+    let cancelled = false;
+    const syncDisputes = async () => {
+      try {
+        let token: string | null = null;
+        try {
+          token = window.localStorage.getItem('resolvia_token');
+        } catch {
+          token = null;
+        }
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const dispRes = await fetch('/api/backend/disputes', { headers, cache: 'no-store' });
+        if (cancelled) return;
+        if (dispRes.ok) {
+          const dispData = await dispRes.json();
+          if (Array.isArray(dispData?.disputes) && dispData.disputes.length > 0) {
+            setCases((prev) => {
+              const map = new Map<string, DisputeCase>();
+              for (const d of dispData.disputes) map.set(d.id, d);
+              for (const p of prev) {
+                if (!map.has(p.id)) map.set(p.id, p);
+                else {
+                  const serverCase = map.get(p.id)!;
+                  map.set(p.id, { ...p, ...serverCase });
+                }
+              }
+              return rebaseline(Array.from(map.values()), authUser);
+            });
+          }
+        }
+      } catch {
+        /* backend offline fallback */
+      }
+    };
+
     if (authUser) {
       setCases((prev) => rebaseline(prev, authUser));
     }
+    syncDisputes();
+    const timer = setInterval(syncDisputes, 12000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, [authUser]);
 
   useEffect(() => {

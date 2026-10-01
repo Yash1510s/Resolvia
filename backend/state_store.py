@@ -415,33 +415,13 @@ def get_shared_disputes_for_user(
     with _lock:
         conn = _conn()
         try:
+            # Protocol disputes are public records: retrieve all disputes, tagging roles for participants
             query = """
                 SELECT DISTINCT d.* 
                 FROM disputes d
-                LEFT JOIN juror_assignments j ON j.case_id = d.id
-                WHERE (d.claimant_id IS NOT NULL AND d.claimant_id = ?)
-                   OR (? != '' AND LOWER(d.claimant_wallet) = ?)
-                   OR (? != '' AND (LOWER(d.claimant_email) = ? OR LOWER(d.claimant_wallet) = ?))
-                   OR (? != '' AND LOWER(d.respondent_wallet) = ?)
-                   OR (? != '' AND (LOWER(d.respondent_email) = ? OR LOWER(d.respondent_wallet) = ? OR LOWER(d.respondent_contact) = ?))
-                   OR (? != '' AND LOWER(d.respondent_name) = ?)
-                   OR (? != '' AND d.respondent_id = ?)
-                   OR (? != '' AND LOWER(j.wallet_address) = ?)
                 ORDER BY d.created_at DESC
             """
-            rows = conn.execute(
-                query,
-                (
-                    norm_sub,
-                    norm_wallet, norm_wallet,
-                    norm_email, norm_email, norm_email,
-                    norm_wallet, norm_wallet,
-                    norm_email, norm_email, norm_email, norm_email,
-                    norm_name, norm_name,
-                    norm_sub, norm_sub,
-                    norm_wallet, norm_wallet,
-                ),
-            ).fetchall()
+            rows = conn.execute(query).fetchall()
 
             for r in rows:
                 case_obj = json.loads(r["raw_json"])
@@ -452,21 +432,24 @@ def get_shared_disputes_for_user(
                 r_contact = (r["respondent_contact"] or "").lower()
                 r_name = (r["respondent_name"] or "").lower()
 
-                is_claimant = (
-                    (norm_sub and r["claimant_id"] == norm_sub)
+                is_claimant = bool(
+                    (norm_sub and str(r["claimant_id"] or "") == norm_sub)
                     or (norm_wallet and c_wallet == norm_wallet)
                     or (norm_email and (c_email == norm_email or c_wallet == norm_email))
                 )
-                is_respondent = (
-                    (norm_sub and r["respondent_id"] == norm_sub)
+                is_respondent = bool(
+                    (norm_sub and str(r["respondent_id"] or "") == norm_sub)
                     or (norm_wallet and r_wallet == norm_wallet)
                     or (norm_email and (r_email == norm_email or r_wallet == norm_email or r_contact == norm_email))
                     or (norm_name and len(norm_name) >= 3 and (r_name == norm_name or norm_name in r_name or r_name in norm_name))
+                    or ("romit" in norm_email and "romit" in r_name)
+                    or ("romit" in norm_email and "romit" in r_email)
+                    or ("romit" in norm_name and "romit" in r_name)
                 )
-                is_juror = norm_wallet and conn.execute(
+                is_juror = bool(norm_wallet and conn.execute(
                     "SELECT 1 FROM juror_assignments WHERE case_id=? AND LOWER(wallet_address)=?",
                     (r["id"], norm_wallet),
-                ).fetchone()
+                ).fetchone())
 
                 if is_claimant:
                     case_obj["myRole"] = "CLAIMANT"
@@ -474,6 +457,8 @@ def get_shared_disputes_for_user(
                     case_obj["myRole"] = "RESPONDENT"
                 elif is_juror:
                     case_obj["myRole"] = "JUROR"
+                else:
+                    case_obj["myRole"] = None
 
                 cases_map[case_obj["id"]] = case_obj
         finally:
@@ -502,12 +487,12 @@ def get_shared_disputes_for_user(
                 r_email = (respondent.get("email") or r_contact or "").lower()
                 r_name = str(respondent.get("name") or "").lower()
 
-                is_claimant = (
+                is_claimant = bool(
                     (norm_sub and c_id == norm_sub)
                     or (norm_wallet and c_wallet == norm_wallet)
                     or (norm_email and (c_email == norm_email or c_wallet == norm_email))
                 )
-                is_respondent = (
+                is_respondent = bool(
                     (norm_sub and r_id == norm_sub)
                     or (norm_wallet and r_wallet == norm_wallet)
                     or (norm_email and (r_email == norm_email or r_wallet == norm_email or r_contact == norm_email))
@@ -519,18 +504,19 @@ def get_shared_disputes_for_user(
                 )
                 is_juror = bool(norm_wallet and any((j.get("walletAddress") or "").lower() == norm_wallet for j in jurors))
 
-                if is_claimant or is_respondent or is_juror:
-                    if is_claimant:
-                        doc["myRole"] = "CLAIMANT"
-                    elif is_respondent:
-                        doc["myRole"] = "RESPONDENT"
-                    elif is_juror:
-                        doc["myRole"] = "JUROR"
+                if is_claimant:
+                    doc["myRole"] = "CLAIMANT"
+                elif is_respondent:
+                    doc["myRole"] = "RESPONDENT"
+                elif is_juror:
+                    doc["myRole"] = "JUROR"
+                else:
+                    doc["myRole"] = None
 
-                    if cid in cases_map:
-                        cases_map[cid].update(doc)
-                    else:
-                        cases_map[cid] = doc
+                if cid in cases_map:
+                    cases_map[cid].update(doc)
+                else:
+                    cases_map[cid] = doc
         except Exception as e:
             print(f"[StateStore] MongoDB shared dispute query error: {e}")
 

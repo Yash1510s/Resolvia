@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
+  ArrowRight,
   BookOpen,
   Landmark,
   Eye,
@@ -35,14 +36,48 @@ export default function CaseStudyDetail({ params }: { params: Promise<{ caseId: 
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
   const [legalOpen, setLegalOpen] = useState(false);
 
-  if (!c || (c.status !== 'CLOSED' && c.status !== 'FINALIZED')) {
+  if (!c) {
     return (
-      <Card className="p-10 text-center">
-        <p className="text-sm font-bold text-slate-900">Case study not available</p>
-        <p className="text-xs text-slate-400 mt-1">Only closed cases are published as case studies.</p>
+      <Card className="p-10 text-center max-w-lg mx-auto my-12">
+        <p className="text-sm font-bold text-slate-900">Case not found</p>
+        <p className="text-xs text-slate-400 mt-1">This case does not exist or has not synced to this session.</p>
         <Link href="/case-studies" className="inline-flex items-center gap-1.5 px-4 py-2 mt-4 rounded-xl bg-violet-600 text-white text-xs font-bold">
-          <ArrowLeft className="w-3.5 h-3.5" /> Case Studies
+          <ArrowLeft className="w-3.5 h-3.5" /> Back to Case Studies
         </Link>
+      </Card>
+    );
+  }
+
+  if (c.status !== 'CLOSED' && c.status !== 'FINALIZED') {
+    return (
+      <Card className="p-8 text-center max-w-lg mx-auto my-12 space-y-4">
+        <div className="w-12 h-12 rounded-2xl bg-violet-100 text-violet-700 flex items-center justify-center mx-auto">
+          <Scale className="w-6 h-6" />
+        </div>
+        <div>
+          <h2 className="text-lg font-black text-slate-900">{c.title}</h2>
+          <p className="text-xs text-slate-500 mt-1.5">
+            This dispute is currently an <strong>Active Proceeding</strong> in the{' '}
+            <span className="font-bold text-violet-700">{c.status.replace(/_/g, ' ')}</span> phase.
+          </p>
+          <p className="text-[11px] text-slate-400 mt-1">
+            Case studies with jury reasoning are published upon finalization.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+          <Link
+            href={`/cases/${c.id}`}
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition-colors"
+          >
+            Inspect Live Case &amp; Evidence <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+          <Link
+            href="/case-studies"
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-bold transition-colors"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> All Studies
+          </Link>
+        </div>
       </Card>
     );
   }

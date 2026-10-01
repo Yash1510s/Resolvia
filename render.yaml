@@ -20,6 +20,21 @@ services:
         value: "11155111"
       - key: PYTHON_VERSION
         value: 3.11.9
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        value: ysevil1212@gmail.com
+      - key: SMTP_PASS
+        value: "uhfy uopi qqsu bsfm"
+      - key: SMTP_FROM
+        value: "Resolvia Protocol <ysevil1212@gmail.com>"
+      - key: MONGODB_URI
+        value: "mongodb+srv://ysevil1212_db_user:qRNQGlAsaZWGmws9@resolvia.mj1cdnr.mongodb.net/resolvia?retryWrites=true&w=majority&appName=Resolvia"
+      - key: MONGODB_DB_NAME
+        value: "resolvia"
+
 
   # ─── Next.js 16 Frontend ───
   - type: web

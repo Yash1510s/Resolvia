@@ -618,19 +618,15 @@ def _send_dispute_filed_email(
     case_id: str,
 ) -> None:
     """Send dispute notice to respondent via SMTP with direct case link and 48h deadline."""
-    if "SMTP_HOST" not in os.environ:
-        print(f"[Email Notice] SMTP not configured; skipping email to {respondent_email}")
-        return
-
     import smtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
-    host = os.environ["SMTP_HOST"]
+    host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
     port = int(os.environ.get("SMTP_PORT", "587"))
-    user = os.environ.get("SMTP_USER", "").strip()
-    password = os.environ.get("SMTP_PASS", "").replace(" ", "").strip()
-    sender = os.environ.get("SMTP_FROM", f"Resolvia Protocol <{user}>" if user else "Resolvia Disputes <no-reply@resolvia.org>")
+    user = os.environ.get("SMTP_USER", "ysevil1212@gmail.com").strip()
+    password = os.environ.get("SMTP_PASS", "uhfy uopi qqsu bsfm").replace(" ", "").strip()
+    sender = os.environ.get("SMTP_FROM", f"Resolvia Protocol <{user}>")
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"Action Required: Dispute Filed Against You [{case_number}]"
