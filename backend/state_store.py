@@ -630,7 +630,15 @@ def load_state(
 # ── Direct Relational Operations (REST Support) ──────────────────────────────
 
 def get_dispute_by_id(case_id: str) -> Optional[Dict[str, Any]]:
-    """Query a single dispute by ID (SQLite + MongoDB fallback)."""
+    """Query a single dispute by ID (MongoDB Atlas primary + SQLite fallback)."""
+    if is_mongo_active():
+        try:
+            docs = get_disputes_from_mongo({"id": case_id})
+            if docs:
+                return docs[0]
+        except Exception as e:
+            print(f"[StateStore] MongoDB get_dispute_by_id note: {e}")
+
     with _lock:
         conn = _conn()
         try:
@@ -639,14 +647,6 @@ def get_dispute_by_id(case_id: str) -> Optional[Dict[str, Any]]:
                 return json.loads(row["raw_json"])
         finally:
             conn.close()
-
-    if is_mongo_active():
-        try:
-            docs = get_disputes_from_mongo({"id": case_id})
-            if docs:
-                return docs[0]
-        except Exception:
-            pass
 
     return None
 

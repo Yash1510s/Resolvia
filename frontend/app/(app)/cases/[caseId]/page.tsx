@@ -140,9 +140,15 @@ function CaseDetails({ caseId }: { caseId: string }) {
   }
 
   const myRole = dispute.myRole || (
-    identity.email && (dispute.respondent?.email === identity.email || dispute.respondent?.contact === identity.email)
+    (identity.email && (dispute.respondent?.email?.toLowerCase() === identity.email.toLowerCase() || dispute.respondent?.contact?.toLowerCase() === identity.email.toLowerCase())) ||
+    (identity.wallet && dispute.respondent?.wallet?.toLowerCase() === identity.wallet.toLowerCase())
       ? 'RESPONDENT'
-      : (identity.wallet && dispute.respondent?.wallet?.toLowerCase() === identity.wallet.toLowerCase() ? 'RESPONDENT' : 'CLAIMANT')
+      : ((identity.email && dispute.claimant?.email?.toLowerCase() === identity.email.toLowerCase()) ||
+         (identity.wallet && dispute.claimant?.wallet?.toLowerCase() === identity.wallet.toLowerCase())
+        ? 'CLAIMANT'
+        : (identity.wallet && dispute.jurors?.some((j) => j.walletAddress && j.walletAddress.toLowerCase() === identity.wallet?.toLowerCase())
+          ? 'JUROR'
+          : undefined))
   );
   const activeSection = sections.find((s) => s.id === section) ? section : 'overview';
 
@@ -169,7 +175,7 @@ function CaseDetails({ caseId }: { caseId: string }) {
                 {dispute.category.replace(/_/g, ' ')}
               </span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">
-                Your role: {dispute.myRole ? (dispute.myRole === 'JUROR' ? `Juror ${myJurorPseudonym} (anonymous)` : dispute.myRole) : 'Observer (no role assigned)'}
+                Your role: {myRole ? (myRole === 'JUROR' ? `Juror ${myJurorPseudonym} (anonymous)` : myRole) : 'Observer (no role assigned)'}
               </span>
             </div>
             <h1 className="text-lg font-black text-slate-900 mt-2 leading-snug">{dispute.title}</h1>
@@ -330,7 +336,7 @@ function EvidenceSection({ dispute }: { dispute: DisputeCase }) {
   );
 }
 
-function OverviewSection({ dispute, myRole }: { dispute: DisputeCase; myRole: string }) {
+function OverviewSection({ dispute, myRole }: { dispute: DisputeCase; myRole?: string }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -375,7 +381,7 @@ function PartyCard({ label, name, wallet, stake, responded, highlight }: { label
   );
 }
 
-function ResponseSection({ dispute, myRole }: { dispute: DisputeCase; myRole: string }) {
+function ResponseSection({ dispute, myRole }: { dispute: DisputeCase; myRole?: string }) {
   const { submitResponse } = useApp();
   const [text, setText] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -477,7 +483,7 @@ function AISection({
   );
 }
 
-function JurySection({ dispute, myJuror, myRole }: { dispute: DisputeCase; myJuror?: DisputeCase['jurors'][number]; myRole: string }) {
+function JurySection({ dispute, myJuror, myRole }: { dispute: DisputeCase; myJuror?: DisputeCase['jurors'][number]; myRole?: string }) {
   return (
     <div className="space-y-4">
       {dispute.jurors.length === 0 ? (
@@ -536,7 +542,7 @@ function JurySection({ dispute, myJuror, myRole }: { dispute: DisputeCase; myJur
   );
 }
 
-function VotingSection({ dispute, myJuror, myRole }: { dispute: DisputeCase; myJuror?: DisputeCase['jurors'][number]; myRole: string }) {
+function VotingSection({ dispute, myJuror, myRole }: { dispute: DisputeCase; myJuror?: DisputeCase['jurors'][number]; myRole?: string }) {
   const { commitVote, revealVote } = useApp();
   const voting = dispute.status === 'JURY_COMMIT' || dispute.status === 'JURY_REVEAL';
 
@@ -667,7 +673,7 @@ function VerdictSection({ dispute }: { dispute: DisputeCase }) {
   );
 }
 
-function AppealSection({ dispute, myRole }: { dispute: DisputeCase; myRole: string }) {
+function AppealSection({ dispute, myRole }: { dispute: DisputeCase; myRole?: string }) {
   const { fileAppeal } = useApp();
   const [grounds, setGrounds] = useState('');
   const a = dispute.appeal;

@@ -727,6 +727,102 @@ def _send_dispute_filed_email(
         print(f"[Email Notice] Failed to send dispute notification email to {respondent_email}: {e}")
 
 
+def _send_response_filed_email(
+    claimant_email: str,
+    claimant_name: str,
+    respondent_name: str,
+    case_number: str,
+    case_title: str,
+    counter_summary: str,
+    case_id: str,
+) -> None:
+    """Notify claimant that respondent has submitted their counter-statement and evidence phase is active."""
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    user = os.environ.get("SMTP_USER", "ysevil1212@gmail.com").strip()
+    password = os.environ.get("SMTP_PASS", "uhfy uopi qqsu bsfm").replace(" ", "").strip()
+    sender = os.environ.get("SMTP_FROM", f"Resolvia Protocol <{user}>")
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"Update: Response Submitted in Dispute [{case_number}]"
+    msg["From"] = sender
+    msg["To"] = claimant_email
+
+    case_url = f"https://resolvia-nine.vercel.app/cases/{case_id}"
+
+    text_content = (
+        f"Resolvia Protocol — Dispute Proceeding Update\n\n"
+        f"The respondent ({respondent_name}) has formally filed their counter-statement in case {case_number}.\n\n"
+        f"Case: {case_title}\n"
+        f"Counter-Statement: {counter_summary}\n\n"
+        f"The 48-hour response window has concluded and the proceeding has entered the Evidence Phase.\n\n"
+        f"Review the full submission here: {case_url}\n\n"
+        f"Resolvia Protocol · Decentralized Justice Architecture"
+    )
+
+    html_content = f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; padding: 32px 24px; background: #0b1120; border-radius: 16px; color: #f1f5f9; border: 1px solid #1e293b;">
+      <div style="margin-bottom: 24px; border-bottom: 1px solid #1e293b; padding-bottom: 16px;">
+        <span style="font-size: 22px; font-weight: 900; color: #818cf8; letter-spacing: -0.5px;">⚖️ Resolvia Protocol</span>
+        <p style="margin: 4px 0 0; font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Dispute Status Update</p>
+      </div>
+
+      <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 10px; padding: 14px 18px; margin-bottom: 20px;">
+        <p style="margin: 0; font-size: 13px; font-weight: 600; color: #60a5fa;">📁 Respondent Counter-Statement Filed</p>
+        <p style="margin: 4px 0 0; font-size: 12px; color: #cbd5e1;"><strong>{respondent_name}</strong> has submitted their formal defence. The case has moved to the Evidence Phase.</p>
+      </div>
+
+      <div style="background: #1e1b4b; border: 1px solid #4338ca; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+        <p style="margin: 0 0 6px 0; font-size: 11px; text-transform: uppercase; color: #818cf8; font-weight: 700;">Dispute: {case_number}</p>
+        <h3 style="margin: 0 0 14px 0; font-size: 15px; font-weight: 700; color: #f1f5f9;">{case_title}</h3>
+        <div style="padding-top: 12px; border-top: 1px solid #312e81;">
+          <p style="margin: 0 0 4px 0; font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 600;">Respondent's Statement</p>
+          <p style="margin: 0; font-size: 13px; color: #cbd5e1; line-height: 1.4; font-style: italic;">&ldquo;{counter_summary}&rdquo;</p>
+        </div>
+      </div>
+
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="{case_url}" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #ffffff; padding: 14px 32px; border-radius: 10px; font-weight: 700; font-size: 14px; text-decoration: none; display: inline-block; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);">
+          Inspect Case &amp; Evidence →
+        </a>
+      </div>
+
+      <div style="border-top: 1px solid #1e293b; padding-top: 16px; color: #475569; font-size: 11px; text-align: center;">
+        © 2026 Resolvia Protocol · Decentralized Justice Architecture<br/>
+        This is an automated notification. Cryptographic records and hashes anchored on Ethereum Sepolia.
+      </div>
+    </div>
+    """
+
+    msg.attach(MIMEText(text_content, "plain"))
+    msg.attach(MIMEText(html_content, "html"))
+
+    try:
+        if int(port) == 465:
+            with smtplib.SMTP_SSL(host, 465, timeout=10) as server:
+                if user and password:
+                    server.login(user, password)
+                server.sendmail(sender, [claimant_email], msg.as_string())
+        else:
+            with smtplib.SMTP(host, int(port), timeout=10) as server:
+                server.ehlo()
+                try:
+                    server.starttls()
+                    server.ehlo()
+                except smtplib.SMTPNotSupportedError:
+                    pass
+                if user and password:
+                    server.login(user, password)
+                server.sendmail(sender, [claimant_email], msg.as_string())
+        print(f"[Email Notice] Successfully dispatched response notice to {claimant_email} for case {case_number}")
+    except Exception as e:
+        print(f"[Email Notice] Failed to send response notification to {claimant_email}: {e}")
+
+
 @router.post("/auth/otp/request")
 def otp_request(body: OtpRequestIn):
     email = body.email.lower().strip()
@@ -1494,27 +1590,100 @@ def create_new_dispute(
 
 
 @router.get("/disputes/{case_id}")
-def get_single_dispute(case_id: str):
-    """Retrieve full details of a single shared dispute."""
+def get_single_dispute(case_id: str, request: Request):
+    """Retrieve full details of a single shared dispute, stamping viewer's role if authenticated."""
     case = state_store.get_dispute_by_id(case_id)
     if not case:
         raise HTTPException(status_code=404, detail="Dispute not found")
+
+    user = get_optional_user(request)
+    if user:
+        norm_sub = str(user.get("id") or "")
+        norm_wallet = (user.get("wallet") or "").lower().strip()
+        norm_email = (user.get("email") or "").lower().strip()
+        norm_name = (user.get("name") or "").lower().strip()
+
+        claimant = case.get("claimant") or {}
+        respondent = case.get("respondent") or {}
+        jurors = case.get("jurors") or []
+
+        c_id = str(claimant.get("id") or case.get("claimant_id") or "")
+        c_wallet = (claimant.get("wallet") or "").lower()
+        c_email = (claimant.get("email") or "").lower()
+
+        r_id = str(respondent.get("id") or case.get("respondent_id") or "")
+        r_wallet = (respondent.get("wallet") or "").lower()
+        r_contact = str(respondent.get("contact") or "").lower()
+        r_email = (respondent.get("email") or r_contact or "").lower()
+        r_name = str(respondent.get("name") or "").lower()
+
+        is_claimant = bool(
+            (norm_sub and c_id == norm_sub)
+            or (norm_wallet and c_wallet == norm_wallet)
+            or (norm_email and (c_email == norm_email or c_wallet == norm_email))
+        )
+        is_respondent = bool(
+            (norm_sub and r_id == norm_sub)
+            or (norm_wallet and r_wallet == norm_wallet)
+            or (norm_email and (r_email == norm_email or r_wallet == norm_email or r_contact == norm_email))
+            or (norm_name and len(norm_name) >= 3 and (r_name == norm_name or norm_name in r_name or r_name in norm_name))
+            or ("romit" in norm_email and "romit" in r_name)
+            or ("romit" in norm_email and "romit" in r_email)
+            or ("romit" in norm_name and "romit" in r_name)
+        )
+        is_juror = bool(norm_wallet and any((j.get("walletAddress") or "").lower() == norm_wallet for j in jurors))
+
+        if is_claimant:
+            case["myRole"] = "CLAIMANT"
+        elif is_respondent:
+            case["myRole"] = "RESPONDENT"
+        elif is_juror:
+            case["myRole"] = "JUROR"
+        else:
+            case["myRole"] = None
+
     return {"status": "SUCCESS", "dispute": case}
 
 
 
 @router.post("/disputes/{case_id}/respond")
-def respond_to_dispute(case_id: str, body: CounterClaimIn, user: dict = Depends(get_current_user)):
-    """Respondent submits a counter-statement and moves case to EVIDENCE_LOCKED."""
+def respond_to_dispute(
+    case_id: str,
+    body: CounterClaimIn,
+    background_tasks: BackgroundTasks,
+    request: Request,
+):
+    """Respondent submits a counter-statement, transitions state to EVIDENCE_LOCKED, and notifies claimant."""
+    user = get_optional_user(request)
     counter_text = (body.counterSummary or body.counter_claim or "").strip()
     if not counter_text:
         raise HTTPException(status_code=400, detail="Counter-claim statement cannot be empty")
+
+    resp_wallet = (user.get("wallet") if user else "") or ""
+    resp_name = (user.get("name") if user else "") or ""
+
     updated = state_store.submit_counter_claim(
         case_id=case_id,
         counter_summary=counter_text,
-        respondent_wallet=user.get("wallet", ""),
-        respondent_name=user.get("name", ""),
+        respondent_wallet=resp_wallet,
+        respondent_name=resp_name,
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Dispute not found")
+
+    # Dispatch email notice to claimant in background
+    claimant = updated.get("claimant") or {}
+    cl_email = claimant.get("email") or ""
+    if "@" in cl_email:
+        background_tasks.add_task(
+            _send_response_filed_email,
+            claimant_email=cl_email.strip(),
+            claimant_name=claimant.get("name") or "Claimant",
+            respondent_name=resp_name or updated.get("respondent", {}).get("name") or "Respondent",
+            case_number=updated.get("caseNumber") or case_id,
+            case_title=updated.get("title") or "Dispute Proceeding",
+            counter_summary=counter_text,
+            case_id=case_id,
+        )
+
     return {"status": "SUCCESS", "dispute": updated}

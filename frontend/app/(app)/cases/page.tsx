@@ -110,13 +110,19 @@ function MyCases() {
   const actionFor = (c: DisputeCase): { label: string; href: string } => {
     if (isClosed(c)) return { label: 'View Outcome', href: `/cases/${c.id}` };
     if (c.myRole === 'JUROR') return { label: 'Review & Vote', href: `/jury/${c.id}` };
-    if (c.status === 'EVIDENCE_LOCKED') return { label: 'Submit Evidence', href: `/cases/${c.id}` };
-    if (c.status === 'AI_ANALYSIS') return { label: 'View Progress', href: `/cases/${c.id}` };
+    if (c.myRole === 'RESPONDENT' && !c.respondent?.responded && (c.status === 'SUBMITTED' || c.status === 'RESPONDENT_WINDOW')) {
+      return { label: 'Respond to Dispute', href: `/cases/${c.id}?section=response` };
+    }
+    if (c.status === 'EVIDENCE_LOCKED') return { label: 'Submit Evidence', href: `/cases/${c.id}?section=evidence` };
+    if (c.status === 'AI_ANALYSIS') return { label: 'View Progress', href: `/cases/${c.id}?section=ai` };
     return { label: 'View Case', href: `/cases/${c.id}` };
   };
 
   const deadlineFor = (c: DisputeCase) => {
     if (isClosed(c)) return { icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />, top: 'Resolved on', sub: fmtDate(c.caseStudy?.closedAt || c.verdictOutcome?.finalizedAt || c.createdAt) };
+    if (c.status === 'SUBMITTED' || c.status === 'RESPONDENT_WINDOW') {
+      return { icon: <Clock className="w-4 h-4 text-amber-500" />, top: 'Response deadline', sub: fmtDate(c.responseDeadline), urgent: true };
+    }
     const vd = now ? new Date(c.votingDeadline).getTime() - now : 0;
     if (c.status === 'EVIDENCE_LOCKED') return { icon: <Calendar className="w-4 h-4 text-slate-400" />, top: 'Submit evidence by', sub: fmtDate(c.responseDeadline) };
     if (c.status === 'AI_ANALYSIS') return { icon: <Clock className="w-4 h-4 text-amber-500" />, top: 'AI analysis in progress', sub: 'est. 1 day' };

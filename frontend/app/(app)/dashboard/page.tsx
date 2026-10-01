@@ -80,21 +80,35 @@ function Dashboard() {
   const upcoming = useMemo(() => {
     const list: { when: string; time: string; icon: React.ReactNode; tone: string; title: string; sub: string; href: string }[] = [];
     for (const c of activeCases.filter((c) => c.myRole)) {
-      const tl = now ? new Date(c.votingDeadline).getTime() - now : 0;
+      const isRespWindow = c.status === 'RESPONDENT_WINDOW' || c.status === 'SUBMITTED';
+      const deadlineIso = isRespWindow ? (c.responseDeadline || c.votingDeadline) : c.votingDeadline;
+      const tl = now ? new Date(deadlineIso).getTime() - now : 0;
       // "when" is relative to now → SSR/CSR can disagree; use a static date until mounted.
       const when = !mounted
-        ? fmtDate(c.votingDeadline).split(',')[0]
-        : tl > 0 ? (tl < 86_400_000 ? 'Today' : tl < 172_800_000 ? 'Tomorrow' : fmtDate(c.votingDeadline).split(',')[0])
-        : fmtDate(c.votingDeadline).split(',')[0];
+        ? fmtDate(deadlineIso).split(',')[0]
+        : tl > 0 ? (tl < 86_400_000 ? 'Today' : tl < 172_800_000 ? 'Tomorrow' : fmtDate(deadlineIso).split(',')[0])
+        : fmtDate(deadlineIso).split(',')[0];
+
+      const title = isRespWindow
+        ? (c.myRole === 'RESPONDENT' ? 'Action Required: Respond to Dispute' : 'Awaiting Respondent Response')
+        : c.status === 'EVIDENCE_LOCKED'
+        ? 'Evidence submission deadline'
+        : c.status === 'AI_ANALYSIS'
+        ? 'Awaiting AI advisory report'
+        : 'Voting deadline';
+
+      const href = isRespWindow && c.myRole === 'RESPONDENT'
+        ? `/cases/${c.id}?section=response`
+        : `/cases/${c.id}`;
+
       list.push({
         when,
-        time: new Date(c.votingDeadline).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit' }),
+        time: new Date(deadlineIso).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit' }),
         icon: <Clock className="w-3.5 h-3.5" />,
-        tone: 'bg-amber-100 text-amber-600',
-        title:
-          c.status === 'EVIDENCE_LOCKED' ? 'Evidence submission deadline' : c.status === 'AI_ANALYSIS' ? 'Awaiting AI advisory report' : 'Voting deadline',
+        tone: isRespWindow && c.myRole === 'RESPONDENT' ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600',
+        title,
         sub: `${shortCaseId(c.id)} · ${c.title}`,
-        href: `/cases/${c.id}`,
+        href,
       });
     }
     for (const i of invitations.filter((x) => x.status === 'PENDING')) {
@@ -282,10 +296,22 @@ function Dashboard() {
                     </div>
                     <Chip tone={cat.tone} className="hidden sm:inline-flex">{cat.label}</Chip>
                     <span className="hidden md:inline text-[11px] font-semibold text-slate-500 w-24 text-right">{role}</span>
-                    <Chip tone={statusTone(c.status)} dot>{voting ? 'Under Jury Review' : c.status.replace(/_/g, ' ')}</Chip>
+                    {c.status === 'RESPONDENT_WINDOW' || c.status === 'SUBMITTED' ? (
+                      <Chip tone={c.myRole === 'RESPONDENT' ? 'rose' : 'blue'} dot>
+                        {c.myRole === 'RESPONDENT' ? 'Action Required' : 'Response Window'}
+                      </Chip>
+                    ) : (
+                      <Chip tone={statusTone(c.status)} dot>{voting ? 'Under Jury Review' : c.status.replace(/_/g, ' ')}</Chip>
+                    )}
                     <div className="hidden lg:block text-right w-36">
-                      <p suppressHydrationWarning className="text-[11px] font-semibold text-slate-500">{voting ? 'Voting ends' : 'Updated'} in {fmtDate(c.votingDeadline).split(',')[0]}</p>
-                      <p suppressHydrationWarning className="text-[10px] text-slate-400">{fmtDate(c.votingDeadline)}</p>
+                      <p suppressHydrationWarning className="text-[11px] font-semibold text-slate-500">
+                        {c.status === 'RESPONDENT_WINDOW' || c.status === 'SUBMITTED'
+                          ? 'Response due'
+                          : voting ? 'Voting ends' : 'Updated'} in {fmtDate((c.status === 'RESPONDENT_WINDOW' || c.status === 'SUBMITTED') ? (c.responseDeadline || c.votingDeadline) : c.votingDeadline).split(',')[0]}
+                      </p>
+                      <p suppressHydrationWarning className="text-[10px] text-slate-400">
+                        {fmtDate((c.status === 'RESPONDENT_WINDOW' || c.status === 'SUBMITTED') ? (c.responseDeadline || c.votingDeadline) : c.votingDeadline)}
+                      </p>
                     </div>
                     <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-violet-500" />
                   </Link>
