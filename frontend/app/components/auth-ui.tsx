@@ -12,7 +12,43 @@ function GithubIcon({ className }: { className?: string }) {
   );
 }
 
-/* ─────────────────────────── Auth shell (dark split layout) ─────────────────────────── */
+export class AuthErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error?: string }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error: String(error) };
+  }
+  componentDidCatch(error: any, errorInfo: any) {
+    console.warn('Auth ErrorBoundary caught:', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="max-w-md mx-auto my-12 p-8 bg-white rounded-2xl shadow-xl text-center space-y-4">
+          <Scale className="w-10 h-10 text-violet-600 mx-auto" />
+          <h3 className="text-lg font-black text-slate-900">Sign-in Ready</h3>
+          <p className="text-xs text-slate-500">A browser script refreshed. Click below to continue securely.</p>
+          <button
+            type="button"
+            onClick={() => {
+              this.setState({ hasError: false });
+              window.location.reload();
+            }}
+            className="px-6 py-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+          >
+            Refresh Sign In
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export function AuthLayout({
   children,
@@ -51,7 +87,9 @@ export function AuthLayout({
         </Link>
       </header>
 
-      <main className="relative z-10 flex-1 px-4 sm:px-6 lg:px-10 py-8">{children}</main>
+      <main className="relative z-10 flex-1 px-4 sm:px-6 lg:px-10 py-8">
+        <AuthErrorBoundary>{children}</AuthErrorBoundary>
+      </main>
 
       <footer className="relative z-10 px-5 sm:px-8 py-5 border-t border-white/5 flex items-center justify-between">
         <p className="text-[10px] text-slate-600">AI output on Resolvia is advisory and non-binding. Verdicts are rendered by the human jury.</p>
@@ -206,7 +244,7 @@ export function useGoogle(onCredential: (c: string) => void) {
   const clientId = DEFAULT_GOOGLE_CLIENT_ID;
 
   useEffect(() => {
-    if (!clientId) return;
+    if (!clientId || typeof window === 'undefined') return;
     let cancelled = false;
 
     const render = () => {
@@ -214,8 +252,11 @@ export function useGoogle(onCredential: (c: string) => void) {
       try {
         window.google.accounts.id.initialize({
           client_id: clientId,
-          callback: (r: any) => onCredentialRef.current(r.credential),
+          callback: (r: any) => onCredentialRef.current?.(r.credential),
         });
+        if (ref.current) {
+          ref.current.innerHTML = '';
+        }
         window.google.accounts.id.renderButton(ref.current, {
           theme: 'outline',
           size: 'large',
@@ -223,7 +264,7 @@ export function useGoogle(onCredential: (c: string) => void) {
           shape: 'pill',
           width: 170,
         });
-        setReady(true);
+        if (!cancelled) setReady(true);
       } catch (err) {
         console.warn('Google GSI render error:', err);
       }
@@ -231,7 +272,19 @@ export function useGoogle(onCredential: (c: string) => void) {
 
     if (window.google?.accounts?.id) {
       render();
-      return;
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const existing = document.getElementById('google-gsi-client') as HTMLScriptElement | null;
+    if (existing) {
+      existing.addEventListener('load', () => {
+        if (!cancelled) render();
+      });
+      return () => {
+        cancelled = true;
+      };
     }
 
     const s = document.createElement('script');
@@ -259,7 +312,7 @@ export function useGitHub() {
   const enabled = Boolean(clientId);
 
   const login = () => {
-    if (!clientId) return;
+    if (!clientId || typeof window === 'undefined') return;
     const redirectUri = `${window.location.origin}/auth/github/callback`;
     const scope = 'read:user user:email';
     const url = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}`;
@@ -290,25 +343,24 @@ export function SocialRow({
         <div className="h-px flex-1 bg-slate-200"></div>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        {/* Google OAuth */}
+        {/* Google OAuth: self-closing div with NO React children so React never conflicts with Google's iframe */}
         <div className="relative h-11 flex items-center justify-center">
           <div
             ref={googleRef as React.RefObject<HTMLDivElement>}
-            className="h-full w-full flex items-center justify-center overflow-hidden"
-          >
-            {!googleReady && (
-              <div className="w-full h-full px-3 rounded-full border border-slate-200 bg-white text-slate-700 text-xs font-semibold flex items-center justify-center gap-2 shadow-xs">
-                <span className="text-[13px] font-black">
-                  <span className="text-blue-500">G</span>
-                  <span className="text-red-500">o</span>
-                  <span className="text-amber-500">o</span>
-                  <span className="text-blue-500">g</span>
-                  <span className="text-green-600">l</span>
-                  <span className="text-red-500">e</span>
-                </span>
-              </div>
-            )}
-          </div>
+            className={`h-full w-full flex items-center justify-center overflow-hidden ${!googleReady ? 'opacity-0 pointer-events-none' : 'opacity-100'} transition-opacity`}
+          />
+          {!googleReady && (
+            <div className="absolute inset-0 pointer-events-none px-3 rounded-full border border-slate-200 bg-white text-slate-700 text-xs font-semibold flex items-center justify-center gap-2 shadow-xs">
+              <span className="text-[13px] font-black">
+                <span className="text-blue-500">G</span>
+                <span className="text-red-500">o</span>
+                <span className="text-amber-500">o</span>
+                <span className="text-blue-500">g</span>
+                <span className="text-green-600">l</span>
+                <span className="text-red-500">e</span>
+              </span>
+            </div>
+          )}
         </div>
 
         {/* GitHub OAuth */}
