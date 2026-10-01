@@ -4,7 +4,11 @@ import { NextRequest, NextResponse } from "next/server";
  * Reverse proxy: browser -> /api/backend/<path> -> FastAPI backend (127.0.0.1:8000).
  * Auth (email OTP / Google) + custodial wallet + wallet-signed voting.
  */
-const BACKEND_URL = process.env.RESOLVIA_BACKEND_URL || "http://127.0.0.1:8000";
+const BACKEND_URL =
+  process.env.RESOLVIA_BACKEND_URL ||
+  (process.env.NODE_ENV === "production"
+    ? "https://resolvia-3yau.onrender.com"
+    : "http://127.0.0.1:8000");
 
 export const dynamic = "force-dynamic";
 

@@ -43,3 +43,5 @@ services:
         value: 538051232460-ivt400142se1n83599tlmjag2ftriaej.apps.googleusercontent.com
       - key: NEXT_PUBLIC_GITHUB_CLIENT_ID
         value: Ov23liGL2GL7JiMfD1kK
+      - key: RESOLVIA_BACKEND_URL
+        value: https://resolvia-3yau.onrender.com
