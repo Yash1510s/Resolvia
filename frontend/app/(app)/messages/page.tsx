@@ -183,7 +183,7 @@ export default function MessagesPage() {
                 >
                   <span className={active ? 'text-violet-600' : 'text-slate-400'}>{t.icon}</span>
                   {t.l}
-                  <span className={`min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-black flex items-center justify-center ${active ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{t.n}</span>
+                  <span suppressHydrationWarning className={`min-w-[18px] h-4.5 px-1 rounded-full text-[10px] font-black flex items-center justify-center ${active ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{t.n}</span>
                 </button>
               );
             })}

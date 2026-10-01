@@ -284,8 +284,8 @@ function Dashboard() {
                     <span className="hidden md:inline text-[11px] font-semibold text-slate-500 w-24 text-right">{role}</span>
                     <Chip tone={statusTone(c.status)} dot>{voting ? 'Under Jury Review' : c.status.replace(/_/g, ' ')}</Chip>
                     <div className="hidden lg:block text-right w-36">
-                      <p className="text-[11px] font-semibold text-slate-500">{voting ? 'Voting ends' : 'Updated'} in {fmtDate(c.votingDeadline).split(',')[0]}</p>
-                      <p className="text-[10px] text-slate-400">{fmtDate(c.votingDeadline)}</p>
+                      <p suppressHydrationWarning className="text-[11px] font-semibold text-slate-500">{voting ? 'Voting ends' : 'Updated'} in {fmtDate(c.votingDeadline).split(',')[0]}</p>
+                      <p suppressHydrationWarning className="text-[10px] text-slate-400">{fmtDate(c.votingDeadline)}</p>
                     </div>
                     <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-violet-500" />
                   </Link>
