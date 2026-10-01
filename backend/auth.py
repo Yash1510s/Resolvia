@@ -534,16 +534,22 @@ def _send_otp_email(email: str, code: str) -> None:
     msg.attach(MIMEText(text_content, "plain"))
     msg.attach(MIMEText(html_content, "html"))
 
-    with smtplib.SMTP(host, port, timeout=15) as server:
-        server.ehlo()
-        try:
-            server.starttls()
+    if int(port) == 465:
+        with smtplib.SMTP_SSL(host, 465, timeout=4) as server:
+            if user and password:
+                server.login(user, password)
+            server.sendmail(sender, [email], msg.as_string())
+    else:
+        with smtplib.SMTP(host, int(port), timeout=4) as server:
             server.ehlo()
-        except smtplib.SMTPNotSupportedError:
-            pass
-        if user and password:
-            server.login(user, password)
-        server.sendmail(sender, [email], msg.as_string())
+            try:
+                server.starttls()
+                server.ehlo()
+            except smtplib.SMTPNotSupportedError:
+                pass
+            if user and password:
+                server.login(user, password)
+            server.sendmail(sender, [email], msg.as_string())
 
 
 def _send_otp_sms(phone: str, code: str) -> None:
