@@ -30,24 +30,27 @@ function GitHubCallbackInner() {
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
+    let cancelled = false;
     const code = searchParams.get('code');
     const error = searchParams.get('error');
 
-    if (error) {
-      setStatus('error');
-      setErrorMsg(searchParams.get('error_description') || 'GitHub authorization was denied.');
-      return;
-    }
+    const exchange = async () => {
+      if (error) {
+        if (!cancelled) {
+          setStatus('error');
+          setErrorMsg(searchParams.get('error_description') || 'GitHub authorization was denied.');
+        }
+        return;
+      }
 
-    if (!code) {
-      setStatus('error');
-      setErrorMsg('No authorization code received from GitHub.');
-      return;
-    }
+      if (!code) {
+        if (!cancelled) {
+          setStatus('error');
+          setErrorMsg('No authorization code received from GitHub.');
+        }
+        return;
+      }
 
-    // Exchange the code for a session
-    let cancelled = false;
-    (async () => {
       const result = await githubLogin(code);
       if (cancelled) return;
       if (result.error) {
@@ -57,11 +60,14 @@ function GitHubCallbackInner() {
         setStatus('success');
         setTimeout(() => router.push('/dashboard'), 1200);
       }
-    })();
+    };
 
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    exchange();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, githubLogin, router]);
 
   return (
     <div className="min-h-screen bg-[#0b132b] flex items-center justify-center relative overflow-hidden">
