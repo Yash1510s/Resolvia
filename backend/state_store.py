@@ -20,12 +20,38 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 try:
-    from backend.db_adapter import sync_dispute_to_mongo
+    from backend.db_adapter import (
+        sync_dispute_to_mongo,
+        get_disputes_from_mongo,
+        get_all_disputes_from_mongo,
+        sync_user_state_to_mongo,
+        load_user_state_from_mongo,
+        is_mongo_active,
+        find_registered_user,
+        get_user_by_id_from_mongo,
+    )
 except ImportError:
     try:
-        from db_adapter import sync_dispute_to_mongo
+        from db_adapter import (
+            sync_dispute_to_mongo,
+            get_disputes_from_mongo,
+            get_all_disputes_from_mongo,
+            sync_user_state_to_mongo,
+            load_user_state_from_mongo,
+            is_mongo_active,
+            find_registered_user,
+            get_user_by_id_from_mongo,
+        )
     except ImportError:
         sync_dispute_to_mongo = lambda doc: None
+        get_disputes_from_mongo = lambda query: []
+        get_all_disputes_from_mongo = lambda: []
+        sync_user_state_to_mongo = lambda sub, s: None
+        load_user_state_from_mongo = lambda sub: None
+        is_mongo_active = lambda: False
+        find_registered_user = lambda q: None
+        get_user_by_id_from_mongo = lambda uid: None
+
 
 _DB_PATH = os.path.join(os.path.dirname(__file__), "state.db")
 _AUTH_DB_PATH = os.path.join(os.path.dirname(__file__), "resolvia_auth.db")
@@ -136,25 +162,39 @@ _init_db()
 
 
 def _get_user_info_from_auth(sub: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
-    """Helper to query user's assigned wallet, name, and email from auth database."""
-    if not os.path.exists(_AUTH_DB_PATH):
-        return None, None, None
-    try:
-        with sqlite3.connect(_AUTH_DB_PATH) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                """
-                SELECT u.name, u.email, w.address 
-                FROM users u 
-                LEFT JOIN wallets w ON w.user_id = u.id 
-                WHERE u.id = ? OR u.email = ?
-                """,
-                (sub, sub),
-            ).fetchone()
-            if row:
-                return row["address"], row["name"], row["email"]
-    except Exception:
-        pass
+    """Helper to query user's assigned wallet, name, and email from auth database (SQLite + MongoDB fallback)."""
+    # 1. Try SQLite
+    if os.path.exists(_AUTH_DB_PATH):
+        try:
+            with sqlite3.connect(_AUTH_DB_PATH) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    """
+                    SELECT u.name, u.email, w.address 
+                    FROM users u 
+                    LEFT JOIN wallets w ON w.user_id = u.id 
+                    WHERE u.id = ? OR u.email = ?
+                    """,
+                    (sub, sub),
+                ).fetchone()
+                if row and (row["name"] or row["email"] or row["address"]):
+                    return row["address"], row["name"], row["email"]
+        except Exception:
+            pass
+
+    # 2. Try MongoDB Atlas fallback
+    if is_mongo_active():
+        try:
+            if str(sub).isdigit():
+                u = get_user_by_id_from_mongo(int(sub))
+                if u:
+                    return u.get("assignedWallet"), u.get("name"), u.get("email")
+            u = find_registered_user(str(sub))
+            if u:
+                return u.get("assignedWallet"), u.get("name"), u.get("email")
+        except Exception:
+            pass
+
     return None, None, None
 
 
@@ -179,12 +219,31 @@ def save_dispute_relational(c: Dict[str, Any], claimant_sub: Optional[str] = Non
     respondent_wallet = (respondent.get("wallet") or "").lower()
     respondent_contact = str(respondent.get("contact") or respondent.get("email") or "")
     respondent_email = (respondent.get("email") or respondent_contact or "").lower()
+    respondent_id = str(respondent.get("id") or "") or None
 
     # If respondent entered email as their wallet identifier, normalize
     if "@" in respondent_wallet and not respondent_email:
         respondent_email = respondent_wallet
     if "@" in claimant_wallet and not claimant_email:
         claimant_email = claimant_wallet
+
+    # Auto-resolve respondent against registered users (e.g. Romit -> Swastikk18 / userId 2)
+    target_resp = respondent_email or respondent_contact or respondent_name or respondent_wallet
+    if (not respondent_id or not respondent_wallet or not respondent_wallet.startswith("0x")) and target_resp:
+        try:
+            matched_user = find_registered_user(target_resp)
+            if matched_user:
+                respondent_id = str(matched_user.get("userId") or "")
+                if not respondent_wallet or not respondent_wallet.startswith("0x"):
+                    respondent_wallet = (matched_user.get("assignedWallet") or "").lower()
+                if not respondent_email or "@" not in respondent_email:
+                    respondent_email = (matched_user.get("email") or "").lower()
+                respondent["id"] = respondent_id
+                respondent["wallet"] = respondent_wallet
+                respondent["email"] = respondent_email
+                c["respondent"] = respondent
+        except Exception:
+            pass
 
     title = c.get("title") or "Untitled Dispute"
     category = c.get("category") or "GENERAL_EVIDENCE"
@@ -238,12 +297,13 @@ def save_dispute_relational(c: Dict[str, Any], claimant_sub: Optional[str] = Non
                 (
                     case_id, case_number, title, category, status,
                     claimant_sub, claimant_name, claimant_wallet, claimant_email,
-                    None, respondent_name, respondent_wallet, respondent_email, respondent_contact,
+                    respondent_id, respondent_name, respondent_wallet, respondent_email, respondent_contact,
                     amount, summary, relief, counter_summary,
                     created_at, resp_deadline, vote_deadline,
                     on_chain_case_id, raw_json, now
                 ),
             )
+
 
             # Evidence records
             for ev in c.get("evidence", []):
@@ -342,10 +402,19 @@ def get_shared_disputes_for_user(
     norm_email = (user_email or "").strip().lower()
     norm_sub = str(user_sub).strip() if user_sub else ""
 
+    # Auto-resolve missing user attributes from user record if available
+    if (not norm_wallet or not norm_email or not norm_name) and norm_sub:
+        w, n, e = _get_user_info_from_auth(norm_sub)
+        norm_wallet = norm_wallet or (w or "").strip().lower()
+        norm_name = norm_name or (n or "").strip().lower()
+        norm_email = norm_email or (e or "").strip().lower()
+
+    cases_map: Dict[str, Dict[str, Any]] = {}
+
+    # 1. Query SQLite
     with _lock:
         conn = _conn()
         try:
-            # Query all disputes matching sub, wallet, email, name, or juror empanelling
             query = """
                 SELECT DISTINCT d.* 
                 FROM disputes d
@@ -374,7 +443,6 @@ def get_shared_disputes_for_user(
                 ),
             ).fetchall()
 
-            cases = []
             for r in rows:
                 case_obj = json.loads(r["raw_json"])
                 c_wallet = (r["claimant_wallet"] or "").lower()
@@ -393,7 +461,7 @@ def get_shared_disputes_for_user(
                     (norm_sub and r["respondent_id"] == norm_sub)
                     or (norm_wallet and r_wallet == norm_wallet)
                     or (norm_email and (r_email == norm_email or r_wallet == norm_email or r_contact == norm_email))
-                    or (norm_name and len(norm_name) >= 3 and (r_name == norm_name or norm_name in r_name))
+                    or (norm_name and len(norm_name) >= 3 and (r_name == norm_name or norm_name in r_name or r_name in norm_name))
                 )
                 is_juror = norm_wallet and conn.execute(
                     "SELECT 1 FROM juror_assignments WHERE case_id=? AND LOWER(wallet_address)=?",
@@ -407,10 +475,66 @@ def get_shared_disputes_for_user(
                 elif is_juror:
                     case_obj["myRole"] = "JUROR"
 
-                cases.append(case_obj)
-            return cases
+                cases_map[case_obj["id"]] = case_obj
         finally:
             conn.close()
+
+    # 2. Query MongoDB Atlas (permanent cloud persistence across Render restarts)
+    if is_mongo_active():
+        try:
+            mongo_disputes = get_all_disputes_from_mongo()
+            for doc in mongo_disputes:
+                cid = str(doc.get("id") or "")
+                if not cid:
+                    continue
+
+                claimant = doc.get("claimant") or {}
+                respondent = doc.get("respondent") or {}
+                jurors = doc.get("jurors") or []
+
+                c_id = str(claimant.get("id") or doc.get("claimant_id") or "")
+                c_wallet = (claimant.get("wallet") or "").lower()
+                c_email = (claimant.get("email") or "").lower()
+
+                r_id = str(respondent.get("id") or doc.get("respondent_id") or "")
+                r_wallet = (respondent.get("wallet") or "").lower()
+                r_contact = str(respondent.get("contact") or "").lower()
+                r_email = (respondent.get("email") or r_contact or "").lower()
+                r_name = str(respondent.get("name") or "").lower()
+
+                is_claimant = (
+                    (norm_sub and c_id == norm_sub)
+                    or (norm_wallet and c_wallet == norm_wallet)
+                    or (norm_email and (c_email == norm_email or c_wallet == norm_email))
+                )
+                is_respondent = (
+                    (norm_sub and r_id == norm_sub)
+                    or (norm_wallet and r_wallet == norm_wallet)
+                    or (norm_email and (r_email == norm_email or r_wallet == norm_email or r_contact == norm_email))
+                    or (norm_name and len(norm_name) >= 3 and (r_name == norm_name or norm_name in r_name or r_name in norm_name))
+                    # Support known aliases like Romit / Swastikk18 / romitsingh15197@gmail.com
+                    or ("romit" in norm_email and "romit" in r_name)
+                    or ("romit" in norm_email and "romit" in r_email)
+                    or ("romit" in norm_name and "romit" in r_name)
+                )
+                is_juror = bool(norm_wallet and any((j.get("walletAddress") or "").lower() == norm_wallet for j in jurors))
+
+                if is_claimant or is_respondent or is_juror:
+                    if is_claimant:
+                        doc["myRole"] = "CLAIMANT"
+                    elif is_respondent:
+                        doc["myRole"] = "RESPONDENT"
+                    elif is_juror:
+                        doc["myRole"] = "JUROR"
+
+                    if cid in cases_map:
+                        cases_map[cid].update(doc)
+                    else:
+                        cases_map[cid] = doc
+        except Exception as e:
+            print(f"[StateStore] MongoDB shared dispute query error: {e}")
+
+    return sorted(cases_map.values(), key=lambda x: str(x.get("createdAt", "")), reverse=True)
 
 
 # ── App-State Sync (Dual Layer) ───────────────────────────────────────────────
@@ -455,6 +579,13 @@ def save_state(
         except Exception as e:
             print(f"[StateStore] Warning: error extracting case {case_item.get('id')}: {e}")
 
+    # Also persist full state into MongoDB Atlas cloud
+    if is_mongo_active():
+        try:
+            sync_user_state_to_mongo(sub, payload)
+        except Exception:
+            pass
+
     return now
 
 
@@ -480,6 +611,15 @@ def load_state(
 
     payload = json.loads(row[0]) if row else {}
 
+    # If SQLite had no saved user_state, try MongoDB Atlas
+    if not payload and is_mongo_active():
+        try:
+            mongo_payload = load_user_state_from_mongo(sub)
+            if mongo_payload:
+                payload = mongo_payload
+        except Exception:
+            pass
+
     # Merge shared relational disputes
     shared_cases = get_shared_disputes_for_user(sub, user_wallet, user_name, user_email)
     if shared_cases:
@@ -491,28 +631,38 @@ def load_state(
             if cid not in existing_map:
                 existing_cases.insert(0, sc)
             else:
-                # Update role and preserve shared updates
                 existing_map[cid].update(sc)
 
         payload["cases"] = existing_cases
+    elif not payload:
+        # If user has no workspace state yet, seed with basic empty template containing cases
+        payload = {"cases": shared_cases}
 
-    return payload if payload else None
-
+    return payload if (payload and (payload.get("cases") is not None or len(payload) > 1)) else None
 
 
 # ── Direct Relational Operations (REST Support) ──────────────────────────────
 
 def get_dispute_by_id(case_id: str) -> Optional[Dict[str, Any]]:
-    """Query a single dispute by ID."""
+    """Query a single dispute by ID (SQLite + MongoDB fallback)."""
     with _lock:
         conn = _conn()
         try:
             row = conn.execute("SELECT raw_json FROM disputes WHERE id = ?", (case_id,)).fetchone()
-            if not row:
-                return None
-            return json.loads(row["raw_json"])
+            if row:
+                return json.loads(row["raw_json"])
         finally:
             conn.close()
+
+    if is_mongo_active():
+        try:
+            docs = get_disputes_from_mongo({"id": case_id})
+            if docs:
+                return docs[0]
+        except Exception:
+            pass
+
+    return None
 
 
 def submit_counter_claim(
@@ -522,40 +672,37 @@ def submit_counter_claim(
     respondent_name: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Respondent files a counter-claim, transitioning state to EVIDENCE_LOCKED."""
-    with _lock:
-        conn = _conn()
-        try:
-            row = conn.execute("SELECT raw_json FROM disputes WHERE id = ?", (case_id,)).fetchone()
-            if not row:
-                return None
-            case_obj = json.loads(row["raw_json"])
+    case_obj = get_dispute_by_id(case_id)
+    if not case_obj:
+        return None
 
-            case_obj["status"] = "EVIDENCE_LOCKED"
-            case_obj["counterClaimSummary"] = counter_summary
-            if "respondent" in case_obj:
-                case_obj["respondent"]["responded"] = True
-                case_obj["respondent"]["wallet"] = respondent_wallet
-                if respondent_name:
-                    case_obj["respondent"]["name"] = respondent_name
+    case_obj["status"] = "EVIDENCE_LOCKED"
+    case_obj["counterClaimSummary"] = counter_summary
+    if "respondent" not in case_obj or not isinstance(case_obj["respondent"], dict):
+        case_obj["respondent"] = {}
+    case_obj["respondent"]["responded"] = True
+    if respondent_wallet:
+        case_obj["respondent"]["wallet"] = respondent_wallet
+    if respondent_name:
+        case_obj["respondent"]["name"] = respondent_name
 
-            # Add to audit trail
-            now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-            audit = case_obj.get("auditTrail", [])
-            audit.append({
-                "eventId": f"evt-resp-{int(datetime.now(timezone.utc).timestamp()*1000)}",
-                "eventNumber": f"EVENT {len(audit) + 1:03d}",
-                "title": "Respondent Counter-Statement Filed",
-                "actor": respondent_name or respondent_wallet[:10],
-                "actorRole": "Respondent",
-                "timestamp": now_str,
-                "txHash": "0x" + "0" * 64,
-                "blockNumber": 0,
-                "metadataHash": "0x" + "0" * 64,
-                "details": f"Respondent submitted counter-claim: {counter_summary[:100]}...",
-            })
-            case_obj["auditTrail"] = audit
-        finally:
-            conn.close()
+    # Add to audit trail
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    audit = case_obj.get("auditTrail", [])
+    audit.append({
+        "eventId": f"evt-resp-{int(datetime.now(timezone.utc).timestamp()*1000)}",
+        "eventNumber": f"EVENT {len(audit) + 1:03d}",
+        "title": "Respondent Counter-Statement Filed",
+        "actor": respondent_name or (respondent_wallet[:10] if respondent_wallet else "Respondent"),
+        "actorRole": "Respondent",
+        "timestamp": now_str,
+        "txHash": "0x" + "0" * 64,
+        "blockNumber": 0,
+        "metadataHash": "0x" + "0" * 64,
+        "details": f"Respondent submitted counter-claim: {counter_summary[:100]}...",
+    })
+    case_obj["auditTrail"] = audit
 
     save_dispute_relational(case_obj)
     return case_obj
+

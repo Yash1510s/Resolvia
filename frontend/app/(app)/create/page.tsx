@@ -22,6 +22,7 @@ import {
   Gavel,
   FilePlus,
   Sparkles,
+  CheckCircle2,
 } from 'lucide-react';
 import { DisputeCase, DisputeCategory, EvidenceItem } from '../../types';
 import { computeSha256, computeSha256Bytes, formatHash, arrayBufferToBase64 } from '../../lib/crypto';
@@ -131,9 +132,35 @@ export default function CreateCasePage() {
   const [phase, setPhase] = useState(-1); // -1 = not submitting, 0..4 progress, 5 = done
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(() => (draft ? 'restored' : null));
   const [createdCase, setCreatedCase] = useState<DisputeCase | null>(null);
+  const [suggestedUser, setSuggestedUser] = useState<{ id: number; name: string; email: string; wallet: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const claimantName = identity?.name ? `${identity.name} (You)` : 'You';
+
+  // Live respondent resolution search
+  useEffect(() => {
+    const q = (respondentContact || respondentName || '').trim();
+    if (q.length < 2) {
+      setSuggestedUser(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/backend/users/search?q=${encodeURIComponent(q)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.users) && data.users.length > 0) {
+            setSuggestedUser(data.users[0]);
+          } else {
+            setSuggestedUser(null);
+          }
+        }
+      } catch {
+        setSuggestedUser(null);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [respondentName, respondentContact]);
 
   // Draft autosave
   useEffect(() => {
@@ -361,15 +388,18 @@ export default function CreateCasePage() {
 
     // Persist to backend and dispatch respondent notification email immediately
     try {
-      if (token) {
-        await fetch('/api/backend/disputes', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ case: newCase }),
-        });
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const dispResp = await fetch('/api/backend/disputes', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ case: newCase }),
+      });
+      if (dispResp.ok) {
+        const dJson = await dispResp.json();
+        if (dJson?.respondentId && !newCase.respondent?.id) {
+          newCase.respondent.id = String(dJson.respondentId);
+        }
       }
     } catch (err) {
       console.warn('Direct backend dispute registration warning:', err);
@@ -608,8 +638,44 @@ export default function CreateCasePage() {
               </div>
               <div>
                 <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Respondent</label>
-                <input value={respondentName} onChange={(e) => setRespondentName(e.target.value)} placeholder="Name of the party you are disputing with" className="mt-1.5 w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-[13px]" />
-                <input value={respondentContact} onChange={(e) => setRespondentContact(e.target.value)} placeholder="Wallet address (0x...) or email (used to notify and assign case)" className="mt-2 w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-[13px]" />
+                <input
+                  value={respondentName}
+                  onChange={(e) => setRespondentName(e.target.value)}
+                  placeholder="Name of the party you are disputing with"
+                  className="mt-1.5 w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-[13px]"
+                />
+                <input
+                  value={respondentContact}
+                  onChange={(e) => setRespondentContact(e.target.value)}
+                  placeholder="Wallet address (0x...) or email (used to notify and assign case)"
+                  className="mt-2 w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-[13px]"
+                />
+                {suggestedUser && (
+                  <div className="mt-2.5 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-[11.5px] font-bold text-emerald-900 truncate">
+                          Registered Resolvia user: {suggestedUser.name}
+                        </p>
+                        <p className="text-[10.5px] text-emerald-700 font-mono truncate">
+                          {suggestedUser.email} {suggestedUser.wallet ? `· ${suggestedUser.wallet.slice(0, 6)}…${suggestedUser.wallet.slice(-4)}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRespondentName(suggestedUser.name);
+                        setRespondentContact(suggestedUser.email || suggestedUser.wallet);
+                        setSuggestedUser(null);
+                      }}
+                      className="px-2.5 py-1 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors whitespace-nowrap shrink-0"
+                    >
+                      Link User
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 

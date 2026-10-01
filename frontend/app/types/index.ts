@@ -200,12 +200,14 @@ export interface DisputeCase {
   category: DisputeCategory;
   status: CaseStatus;
   claimant: {
+    id?: string | number;
     name: string;
     wallet: string;
     email?: string;
     stake: number;
   };
   respondent: {
+    id?: string | number;
     name: string;
     wallet: string;
     email?: string;

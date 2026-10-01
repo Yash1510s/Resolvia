@@ -108,3 +108,125 @@ def sync_dispute_to_mongo(dispute_dict: Dict[str, Any]):
     except Exception as e:
         print(f"[Database] MongoDB dispute sync warning: {e}")
 
+def get_disputes_from_mongo(query: dict) -> list[Dict[str, Any]]:
+    """Query disputes from MongoDB Atlas."""
+    if not is_mongo_active():
+        return []
+    try:
+        disputes_col = _mongo_db["disputes"]
+        docs = list(disputes_col.find(query, {"_id": 0}))
+        return docs
+    except Exception as e:
+        print(f"[Database] MongoDB query disputes error: {e}")
+        return []
+
+def get_all_disputes_from_mongo() -> list[Dict[str, Any]]:
+    """Query all disputes from MongoDB Atlas."""
+    if not is_mongo_active():
+        return []
+    try:
+        disputes_col = _mongo_db["disputes"]
+        return list(disputes_col.find({}, {"_id": 0}))
+    except Exception as e:
+        print(f"[Database] MongoDB fetch all disputes error: {e}")
+        return []
+
+def get_user_by_id_from_mongo(user_id: int) -> Optional[Dict[str, Any]]:
+    """Lookup a single user by integer userId from MongoDB Atlas."""
+    if not is_mongo_active():
+        return None
+    try:
+        users_col = _mongo_db["users"]
+        return users_col.find_one({"userId": user_id}, {"_id": 0})
+    except Exception as e:
+        print(f"[Database] MongoDB user lookup by id error: {e}")
+        return None
+
+def find_registered_user(query_str: str) -> Optional[Dict[str, Any]]:
+    """Find a registered user by email, name, wallet, or userId (exact or partial)."""
+    if not is_mongo_active() or not query_str:
+        return None
+    q = str(query_str).strip()
+    if not q:
+        return None
+    try:
+        import re
+        users_col = _mongo_db["users"]
+        # Exact / case-insensitive search
+        conds = [
+            {"email": {"$regex": f"^{re.escape(q)}$", "$options": "i"}},
+            {"assignedWallet": {"$regex": f"^{re.escape(q)}$", "$options": "i"}},
+            {"name": {"$regex": f"^{re.escape(q)}$", "$options": "i"}},
+        ]
+        if q.isdigit():
+            conds.append({"userId": int(q)})
+        user = users_col.find_one({"$or": conds}, {"_id": 0})
+        if user:
+            return user
+
+        # Substring search if query is at least 3 chars
+        if len(q) >= 3:
+            sub_conds = [
+                {"email": {"$regex": re.escape(q), "$options": "i"}},
+                {"name": {"$regex": re.escape(q), "$options": "i"}},
+                {"assignedWallet": {"$regex": re.escape(q), "$options": "i"}},
+            ]
+            user = users_col.find_one({"$or": sub_conds}, {"_id": 0})
+            if user:
+                return user
+    except Exception as e:
+        print(f"[Database] MongoDB find_registered_user error: {e}")
+    return None
+
+def search_registered_users(query_str: str, limit: int = 10) -> list[Dict[str, Any]]:
+    """Search registered users for autocomplete suggestion."""
+    if not is_mongo_active():
+        return []
+    q = str(query_str or "").strip()
+    try:
+        import re
+        users_col = _mongo_db["users"]
+        if q:
+            conds = [
+                {"email": {"$regex": re.escape(q), "$options": "i"}},
+                {"name": {"$regex": re.escape(q), "$options": "i"}},
+                {"assignedWallet": {"$regex": re.escape(q), "$options": "i"}},
+            ]
+            if q.isdigit():
+                conds.append({"userId": int(q)})
+            cursor = users_col.find({"$or": conds}, {"_id": 0, "userId": 1, "name": 1, "email": 1, "assignedWallet": 1, "avatarUrl": 1, "provider": 1}).limit(limit)
+        else:
+            cursor = users_col.find({}, {"_id": 0, "userId": 1, "name": 1, "email": 1, "assignedWallet": 1, "avatarUrl": 1, "provider": 1}).limit(limit)
+        return list(cursor)
+    except Exception as e:
+        print(f"[Database] MongoDB search_registered_users error: {e}")
+        return []
+
+def sync_user_state_to_mongo(sub: str, state_dict: dict):
+    """Sync full user workspace state to MongoDB Atlas."""
+    if not is_mongo_active() or not sub:
+        return
+    try:
+        state_col = _mongo_db["user_state"]
+        state_col.update_one(
+            {"sub": str(sub)},
+            {"$set": {"sub": str(sub), "state": state_dict, "updatedAt": time.time()}},
+            upsert=True,
+        )
+    except Exception as e:
+        print(f"[Database] MongoDB user_state sync error: {e}")
+
+def load_user_state_from_mongo(sub: str) -> Optional[dict]:
+    """Load user workspace state from MongoDB Atlas."""
+    if not is_mongo_active() or not sub:
+        return None
+    try:
+        state_col = _mongo_db["user_state"]
+        doc = state_col.find_one({"sub": str(sub)}, {"_id": 0})
+        if doc and "state" in doc:
+            return doc["state"]
+    except Exception as e:
+        print(f"[Database] MongoDB load user_state error: {e}")
+    return None
+
+

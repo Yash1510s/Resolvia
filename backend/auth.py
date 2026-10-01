@@ -22,13 +22,14 @@ import secrets
 import sqlite3
 import struct
 import time
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 import jwt
 import requests
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from eth_account import Account
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from eth_utils import keccak
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 try:
@@ -275,6 +276,39 @@ def _get_user_record(user_id: int) -> dict:
         u = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
         w = conn.execute("SELECT address FROM wallets WHERE user_id=?", (user_id,)).fetchone()
     if not u or not w:
+        # Fallback to MongoDB Atlas cloud if SQLite was reset on Render restart
+        if db_adapter and db_adapter.is_mongo_active():
+            mongo_doc = db_adapter.get_user_by_id_from_mongo(user_id)
+            if mongo_doc:
+                # Re-seed into SQLite for fast local lookups
+                try:
+                    with _db() as conn:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO users (id, name, email, google_id, github_id, created_at) VALUES (?,?,?,?,?,?)",
+                            (user_id, mongo_doc.get("name", "User"), mongo_doc.get("email", ""), None, mongo_doc.get("githubId"), mongo_doc.get("updatedAt", time.time()))
+                        )
+                        conn.execute(
+                            "INSERT OR IGNORE INTO wallets (user_id, address, encrypted_key, created_at) VALUES (?,?,?,?)",
+                            (user_id, mongo_doc.get("assignedWallet", ""), b"", time.time())
+                        )
+                except Exception:
+                    pass
+                return {
+                    "id": user_id,
+                    "name": mongo_doc.get("name", "User"),
+                    "email": mongo_doc.get("email", ""),
+                    "provider": mongo_doc.get("provider", "google"),
+                    "wallet": mongo_doc.get("assignedWallet", ""),
+                    "custodialWallet": mongo_doc.get("assignedWallet", ""),
+                    "metamaskAddress": mongo_doc.get("metamaskAddress"),
+                    "avatarUrl": mongo_doc.get("avatarUrl"),
+                    "bgMediaUrl": mongo_doc.get("bgMediaUrl"),
+                    "bgType": mongo_doc.get("bgType", "video"),
+                    "bgTheme": mongo_doc.get("bgTheme", "cyber_violet"),
+                    "phone": mongo_doc.get("phone"),
+                    "githubId": mongo_doc.get("githubId"),
+                    "createdAt": mongo_doc.get("updatedAt", time.time()),
+                }
         raise HTTPException(status_code=404, detail="User not found")
     cols = u.keys()
     meta_addr = u["metamask_address"] if ("metamask_address" in cols and u["metamask_address"]) else None
@@ -362,13 +396,30 @@ def get_current_user(request: Request) -> dict:
     auth = request.headers.get("authorization", "")
     if not auth.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
+    token = auth[7:].strip()
     try:
-        payload = jwt.decode(auth[7:], JWT_SECRET, algorithms=["HS256"])
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Session expired, please sign in again")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid session token")
     return _get_user_record(int(payload["sub"]))
+
+
+def get_optional_user(request: Request) -> Optional[dict]:
+    """Gracefully extract authenticated user if a valid bearer token is present, else None."""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return None
+    token = auth[7:].strip()
+    if not token or token in ("null", "undefined"):
+        return None
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        return _get_user_record(int(payload["sub"]))
+    except Exception:
+        return None
+
 
 
 # ── Chain signing (local Hardhat chain via raw JSON-RPC) ────────────────────
@@ -1314,15 +1365,39 @@ class CounterClaimIn(BaseModel):
     counter_claim: Optional[str] = None
 
 
+@router.get("/users/search")
+def search_registered_users(q: str = Query("", description="Search user by name, email, or wallet")):
+    """Autocomplete / verify registered Resolvia users for dispute party linking."""
+    query = (q or "").strip()
+    if not query or len(query) < 2:
+        return {"users": []}
+    results = db_adapter.search_registered_users(query, limit=5) if db_adapter else []
+    clean_users = [
+        {
+            "id": u.get("userId"),
+            "name": u.get("name"),
+            "email": u.get("email"),
+            "wallet": u.get("assignedWallet"),
+            "provider": u.get("provider"),
+        }
+        for u in results
+    ]
+    return {"users": clean_users}
+
+
 @router.get("/disputes")
-def list_user_disputes(user: dict = Depends(get_current_user)):
-    """Return all shared relational disputes relevant to the logged-in user."""
-    cases = state_store.get_shared_disputes_for_user(
-        user_sub=str(user["id"]),
-        user_wallet=user.get("wallet"),
-        user_name=user.get("name"),
-        user_email=user.get("email"),
-    )
+def list_user_disputes(request: Request):
+    """Return all shared relational disputes relevant to the user (or all system disputes)."""
+    user = get_optional_user(request)
+    if user:
+        cases = state_store.get_shared_disputes_for_user(
+            user_sub=str(user["id"]),
+            user_wallet=user.get("wallet"),
+            user_name=user.get("name"),
+            user_email=user.get("email"),
+        )
+    else:
+        cases = state_store.get_shared_disputes_for_user()
     return {"status": "SUCCESS", "disputes": cases, "count": len(cases)}
 
 
@@ -1330,43 +1405,76 @@ def list_user_disputes(user: dict = Depends(get_current_user)):
 def create_new_dispute(
     body: Dict[str, Any],
     background_tasks: BackgroundTasks,
-    user: dict = Depends(get_current_user),
+    request: Request,
 ):
-    """Directly register a dispute, save relationally & dispatch notification email to respondent."""
+    """Directly register a dispute, auto-resolve respondent against registered users, save relationally & notify respondent."""
+    user = get_optional_user(request)
     case_data = body.get("case") if "case" in body and isinstance(body.get("case"), dict) else body
     if not isinstance(case_data, dict) or not case_data.get("id"):
         raise HTTPException(status_code=400, detail="Invalid dispute case payload: missing case ID")
 
-    # Stamp claimant details from authenticated session if empty
+    # Stamp claimant details from authenticated session if present
     claimant = case_data.setdefault("claimant", {})
-    if not claimant.get("email") and user.get("email"):
-        claimant["email"] = user.get("email")
-    if not claimant.get("wallet") and user.get("wallet"):
-        claimant["wallet"] = user.get("wallet")
-    if not claimant.get("name") and user.get("name"):
-        claimant["name"] = user.get("name")
+    claimant_sub = None
+    if user:
+        claimant_sub = str(user["id"])
+        if not claimant.get("email") and user.get("email"):
+            claimant["email"] = user.get("email")
+        if not claimant.get("wallet") and user.get("wallet"):
+            claimant["wallet"] = user.get("wallet")
+        if not claimant.get("name") and user.get("name"):
+            claimant["name"] = user.get("name")
+    else:
+        # If unauthenticated, try to link claimant if they provided their registered email
+        cl_email = claimant.get("email") or claimant.get("wallet")
+        if cl_email and db_adapter:
+            try:
+                matched_cl = db_adapter.find_registered_user(cl_email)
+                if matched_cl:
+                    claimant_sub = str(matched_cl.get("userId"))
+                    if not claimant.get("wallet") or not claimant["wallet"].startswith("0x"):
+                        claimant["wallet"] = matched_cl.get("assignedWallet")
+            except Exception:
+                pass
+
+    # Auto-resolve respondent against registered users (e.g. Romit -> Swastikk18 / userId 2)
+    respondent = case_data.setdefault("respondent", {})
+    target_resp = respondent.get("email") or respondent.get("contact") or respondent.get("name") or respondent.get("wallet")
+    if target_resp and db_adapter:
+        try:
+            matched_resp = db_adapter.find_registered_user(target_resp)
+            if matched_resp:
+                respondent["id"] = str(matched_resp.get("userId"))
+                if not respondent.get("wallet") or not respondent["wallet"].startswith("0x"):
+                    respondent["wallet"] = matched_resp.get("assignedWallet")
+                if not respondent.get("email") or "@" not in respondent["email"]:
+                    respondent["email"] = matched_resp.get("email")
+                case_data["respondent"] = respondent
+                print(f"[Disputes] Auto-resolved respondent '{target_resp}' -> userId {matched_resp.get('userId')}, wallet {matched_resp.get('assignedWallet')}")
+        except Exception as e:
+            print(f"[Disputes] Respondent auto-resolution note: {e}")
 
     # Persist in relational tables & MongoDB
     try:
-        state_store.save_dispute_relational(case_data, claimant_sub=str(user["id"]))
+        state_store.save_dispute_relational(case_data, claimant_sub=claimant_sub)
     except Exception as e:
         print(f"[Disputes] Error saving dispute relationally: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to persist dispute: {e}")
 
-    # Also prepend into claimant's saved state
-    try:
-        current_state = state_store.load_state(str(user["id"]), user.get("wallet"), user.get("name"), user.get("email")) or {}
-        user_cases = current_state.get("cases", [])
-        # Avoid duplicate
-        user_cases = [c for c in user_cases if c.get("id") != case_data["id"]]
-        user_cases.insert(0, case_data)
-        current_state["cases"] = user_cases
-        state_store.save_state(str(user["id"]), current_state, user.get("wallet"), user.get("name"), user.get("email"))
-    except Exception as e:
-        print(f"[Disputes] Claimant state update note: {e}")
+    # Also prepend into claimant's saved state if claimant is authenticated
+    if user:
+        try:
+            current_state = state_store.load_state(str(user["id"]), user.get("wallet"), user.get("name"), user.get("email")) or {}
+            user_cases = current_state.get("cases", [])
+            # Avoid duplicate
+            user_cases = [c for c in user_cases if c.get("id") != case_data["id"]]
+            user_cases.insert(0, case_data)
+            current_state["cases"] = user_cases
+            state_store.save_state(str(user["id"]), current_state, user.get("wallet"), user.get("name"), user.get("email"))
+        except Exception as e:
+            print(f"[Disputes] Claimant state update note: {e}")
 
     # Dispatch respondent email notification in background
-    respondent = case_data.get("respondent") or {}
     resp_email = respondent.get("email") or respondent.get("contact") or ""
     if "@" in resp_email:
         background_tasks.add_task(
@@ -1384,18 +1492,19 @@ def create_new_dispute(
         "status": "SUCCESS",
         "caseId": case_data["id"],
         "caseNumber": case_data.get("caseNumber"),
+        "respondentId": respondent.get("id"),
         "respondentNotified": "@" in resp_email,
     }
 
 
-
 @router.get("/disputes/{case_id}")
-def get_single_dispute(case_id: str, user: dict = Depends(get_current_user)):
+def get_single_dispute(case_id: str):
     """Retrieve full details of a single shared dispute."""
     case = state_store.get_dispute_by_id(case_id)
     if not case:
         raise HTTPException(status_code=404, detail="Dispute not found")
     return {"status": "SUCCESS", "dispute": case}
+
 
 
 @router.post("/disputes/{case_id}/respond")
