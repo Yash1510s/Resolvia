@@ -189,39 +189,64 @@ declare global {
   }
 }
 
+const DEFAULT_GOOGLE_CLIENT_ID =
+  process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
+  '538051232460-ivt400142se1n83599tlmjag2ftriaej.apps.googleusercontent.com';
+
+const DEFAULT_GITHUB_CLIENT_ID =
+  process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID ||
+  'Ov23liGL2GL7JiMfD1kK';
+
 export function useGoogle(onCredential: (c: string) => void) {
   const [ready, setReady] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
+  const onCredentialRef = useRef(onCredential);
+  onCredentialRef.current = onCredential;
+
+  const clientId = DEFAULT_GOOGLE_CLIENT_ID;
 
   useEffect(() => {
     if (!clientId) return;
     let cancelled = false;
-    const init = () => {
-      if (!ref.current || cancelled) return;
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback: (r: any) => onCredential(r.credential),
-      });
-      window.google.accounts.id.renderButton(ref.current, { theme: 'outline', size: 'medium', text: 'signin_with', shape: 'pill' });
-      setReady(true);
-    };
-    const load = () => {
-      if (window.google?.accounts?.id) {
-        init();
-        return;
+
+    const render = () => {
+      if (!ref.current || cancelled || !window.google?.accounts?.id) return;
+      try {
+        window.google.accounts.id.initialize({
+          client_id: clientId,
+          callback: (r: any) => onCredentialRef.current(r.credential),
+        });
+        window.google.accounts.id.renderButton(ref.current, {
+          theme: 'outline',
+          size: 'large',
+          text: 'signin_with',
+          shape: 'pill',
+          width: 170,
+        });
+        setReady(true);
+      } catch (err) {
+        console.warn('Google GSI render error:', err);
       }
-      const s = document.createElement('script');
-      s.src = 'https://accounts.google.com/gsi/client';
-      s.async = true;
-      s.onload = () => init();
-      document.head.appendChild(s);
     };
-    load();
+
+    if (window.google?.accounts?.id) {
+      render();
+      return;
+    }
+
+    const s = document.createElement('script');
+    s.id = 'google-gsi-client';
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.defer = true;
+    s.onload = () => {
+      if (!cancelled) render();
+    };
+    document.head.appendChild(s);
+
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
 
   return { ref, ready, enabled: Boolean(clientId) };
@@ -230,7 +255,7 @@ export function useGoogle(onCredential: (c: string) => void) {
 /* ─────────────────────────── GitHub OAuth hook ─────────────────────────── */
 
 export function useGitHub() {
-  const clientId = process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID || '';
+  const clientId = DEFAULT_GITHUB_CLIENT_ID;
   const enabled = Boolean(clientId);
 
   const login = () => {
@@ -264,56 +289,39 @@ export function SocialRow({
         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">or continue with</span>
         <div className="h-px flex-1 bg-slate-200"></div>
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        <div className="relative h-10">
-          {googleEnabled ? (
-            <div ref={googleRef as React.RefObject<HTMLDivElement>} className="h-full flex items-center justify-center min-w-[110px]"></div>
-          ) : (
-            <div
-              className="h-full px-3 rounded-full border border-slate-200 bg-slate-50 text-slate-400 text-[11px] font-bold flex items-center justify-center gap-1.5"
-              title="Configure NEXT_PUBLIC_GOOGLE_CLIENT_ID to enable Google sign-in"
-            >
-              <span className="text-[13px] font-black">
-                <span className="text-blue-500">G</span>
-                <span className="text-red-500">o</span>
-                <span className="text-amber-500">o</span>
-                <span className="text-blue-500">g</span>
-                <span className="text-green-600">l</span>
-                <span className="text-red-500">e</span>
-              </span>
-              Coming Soon
-            </div>
-          )}
-        </div>
-        {githubEnabled ? (
-          <button
-            type="button"
-            onClick={onGithubClick}
-            className="h-10 px-3 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all hover:border-slate-400 hover:shadow-sm"
-            title="Continue with GitHub"
-          >
-            <GithubIcon className="w-4 h-4" />
-            GitHub
-          </button>
-        ) : (
+      <div className="grid grid-cols-2 gap-3">
+        {/* Google OAuth */}
+        <div className="relative h-11 flex items-center justify-center">
           <div
-            className="h-10 px-3 rounded-full border border-slate-200 bg-slate-50 text-slate-400 text-[11px] font-bold flex items-center justify-center gap-1.5"
-            title="Configure NEXT_PUBLIC_GITHUB_CLIENT_ID to enable"
+            ref={googleRef as React.RefObject<HTMLDivElement>}
+            className="h-full w-full flex items-center justify-center overflow-hidden"
           >
-            <GithubIcon className="w-3.5 h-3.5" /> Coming Soon
+            {!googleReady && (
+              <div className="w-full h-full px-3 rounded-full border border-slate-200 bg-white text-slate-700 text-xs font-semibold flex items-center justify-center gap-2 shadow-xs">
+                <span className="text-[13px] font-black">
+                  <span className="text-blue-500">G</span>
+                  <span className="text-red-500">o</span>
+                  <span className="text-amber-500">o</span>
+                  <span className="text-blue-500">g</span>
+                  <span className="text-green-600">l</span>
+                  <span className="text-red-500">e</span>
+                </span>
+              </div>
+            )}
           </div>
-        )}
-        <div
-          className="h-10 px-3 rounded-full border border-slate-200 bg-slate-50 text-slate-400 text-[11px] font-bold flex items-center justify-center gap-1.5"
-          title="Protocol roadmap"
-        >
-          <span className="w-3.5 h-3.5 rounded-[3px] bg-[#f25022] inline-flex items-center justify-center text-white text-[7px] font-black">MS</span>
-          Coming Soon
         </div>
+
+        {/* GitHub OAuth */}
+        <button
+          type="button"
+          onClick={onGithubClick}
+          className="h-11 px-4 rounded-full border border-slate-200 bg-white hover:bg-slate-900 hover:text-white hover:border-slate-900 text-slate-800 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-all shadow-xs group"
+          title="Continue with GitHub"
+        >
+          <GithubIcon className="w-4 h-4 text-slate-900 group-hover:text-white transition-colors" />
+          <span>GitHub</span>
+        </button>
       </div>
-      {googleEnabled && !googleReady && (
-        <p className="text-[9px] text-slate-400 mt-2 text-center">Loading Google sign-in…</p>
-      )}
     </div>
   );
 }
