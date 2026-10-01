@@ -83,9 +83,11 @@ async function main() {
   await hub.waitForDeployment();
   console.log("ArbitrationHub:", await hub.getAddress());
 
-  console.log("Wiring coordinator (hub -> CaseRegistry + VotingManager)…");
-  await (await caseRegistry.setArbitrationHub(await hub.getAddress(), { account: deployer })).wait();
-  await (await votingManager.setArbitrationHub(await hub.getAddress(), { account: deployer })).wait();
+  console.log("Wiring coordinator (hub -> CaseRegistry + VotingManager + EvidenceRegistry)…");
+  await (await caseRegistry.setArbitrationHub(await hub.getAddress())).wait();
+  await (await votingManager.setArbitrationHub(await hub.getAddress())).wait();
+  await (await evidence.setCaseRegistry(await caseRegistry.getAddress())).wait();
+  await (await evidence.setArbitrationHub(await hub.getAddress())).wait();
 
   // Sanity: read back the wiring and core constants.
   const hubOnRegistry = await caseRegistry.arbitrationHub();
@@ -110,6 +112,19 @@ async function main() {
       CaseRegistry: await caseRegistry.getAddress(),
       VotingManager: await votingManager.getAddress(),
       ArbitrationHub: await hub.getAddress(),
+    },
+    demoAccounts: {
+      admin: deployer.address,
+      claimant: deployer.address,
+      respondent: deployer.address,
+      jurors: [
+        deployer.address,
+        "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+        "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+        "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc",
+      ],
+      interactiveJuror: deployer.address,
     },
     explorer: {
       token: `https://sepolia.etherscan.io/address/${await token.getAddress()}`,

@@ -115,7 +115,14 @@ export function OnChainProtocol({ dispute }: OnChainProtocolProps) {
   const refreshPanel = useCallback(async (dep: Deployment) => {
     if (caseId === null) return;
     const { votingManager } = getContracts(dep);
-    const jurors = panelAddrs.length > 0 ? panelAddrs : dep.demoAccounts.jurors;
+    const defaultJurors = dep.demoAccounts?.jurors || [
+      DEMO_ACCOUNTS.juror1.address,
+      DEMO_ACCOUNTS.juror2.address,
+      DEMO_ACCOUNTS.juror3.address,
+      DEMO_ACCOUNTS.juror4.address,
+      DEMO_ACCOUNTS.juror5.address,
+    ];
+    const jurors = panelAddrs.length > 0 ? panelAddrs : defaultJurors;
     const rows: PanelJuror[] = [];
     for (let i = 0; i < jurors.length; i++) {
       const addr = jurors[i];
@@ -211,7 +218,14 @@ export function OnChainProtocol({ dispute }: OnChainProtocolProps) {
       // Step 4: appoint panel — hub reads the case's voting deadline on-chain.
       // A signed-in user's assigned wallet joins as Juror A.
       setLaunchStep(3);
-      const launchPanel = authUser ? [authUser.wallet, ...dep.demoAccounts.jurors.slice(1)] : dep.demoAccounts.jurors;
+      const defaultJurors = dep.demoAccounts?.jurors || [
+        DEMO_ACCOUNTS.juror1.address,
+        DEMO_ACCOUNTS.juror2.address,
+        DEMO_ACCOUNTS.juror3.address,
+        DEMO_ACCOUNTS.juror4.address,
+        DEMO_ACCOUNTS.juror5.address,
+      ];
+      const launchPanel = authUser ? [authUser.wallet, ...defaultJurors.slice(1)] : defaultJurors;
       setPanelAddrs(launchPanel);
       const panelNonce = await getManagedNonce(admin.address);
       const panelTx = await hub.connect(admin).appointJurorPanel(cid, launchPanel, { nonce: panelNonce });
@@ -306,7 +320,8 @@ export function OnChainProtocol({ dispute }: OnChainProtocolProps) {
       const { votingManager } = getContracts(dep);
       // Deterministic demo votes: B, C, D → claimant; E → respondent.
       const othersVotes: OnChainVoteChoice[] = [1, 1, 1, 2];
-      for (let i = 1; i < dep.demoAccounts.jurors.length; i++) {
+      const jurorsCount = Math.min(dep.demoAccounts?.jurors?.length || 5, 5);
+      for (let i = 1; i < jurorsCount; i++) {
         const acc = [DEMO_ACCOUNTS.juror2, DEMO_ACCOUNTS.juror3, DEMO_ACCOUNTS.juror4, DEMO_ACCOUNTS.juror5][i - 1];
         const salt = generateSalt32();
         const vote = othersVotes[i - 1];

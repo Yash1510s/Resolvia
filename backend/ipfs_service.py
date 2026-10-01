@@ -43,14 +43,14 @@ def pin_file_to_ipfs(file_bytes: bytes, file_name: str, sha256_hash: str) -> Dic
     secret_key = os.environ.get("PINATA_SECRET_KEY")
 
     if not jwt_token and not (api_key and secret_key):
-        # Graceful fallback to deterministic content-addressed format
-        simulated_cid = f"bafybei{sha256_hash[:44]}"
+        # Honest status: Hash is cryptographically verified, but IPFS pinning is unconfigured
         return {
-            "status": "SIMULATED",
-            "ipfsCid": simulated_cid,
-            "gatewayUrl": f"{DEFAULT_GATEWAY}{simulated_cid}",
+            "status": "UNPINNED_VERIFIED",
+            "ipfsCid": None,
+            "gatewayUrl": None,
             "sha256": sha256_hash,
-            "provider": "Local Hash (Pinata credentials unconfigured)",
+            "provider": "Local SHA-256 (Pinata unconfigured)",
+            "message": "File integrity cryptographically verified via SHA-256. IPFS pinning requires PINATA_JWT or API keys.",
         }
 
     headers = {}
@@ -89,15 +89,15 @@ def pin_file_to_ipfs(file_bytes: bytes, file_name: str, sha256_hash: str) -> Dic
             "provider": "Pinata IPFS",
         }
     except Exception as e:
-        print(f"[IPFS] Pinata upload warning: {e}, using content-addressed fallback.")
-        simulated_cid = f"bafybei{sha256_hash[:44]}"
+        print(f"[IPFS] Pinata upload error: {e}")
         return {
-            "status": "FALLBACK",
-            "ipfsCid": simulated_cid,
-            "gatewayUrl": f"{DEFAULT_GATEWAY}{simulated_cid}",
+            "status": "PIN_FAILED",
+            "ipfsCid": None,
+            "gatewayUrl": None,
             "sha256": sha256_hash,
-            "provider": "Local Content-Address (Pinata error fallback)",
+            "provider": "Pinata IPFS",
             "error": str(e),
+            "message": "File integrity verified via SHA-256, but IPFS pinning encountered an error.",
         }
 
 def pin_json_to_ipfs(payload: Dict[str, Any], name: str = "dossier") -> Dict[str, Any]:

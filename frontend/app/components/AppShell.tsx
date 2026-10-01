@@ -343,35 +343,46 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               onClick={() => setUserMenuOpen((v) => !v)}
               className="flex items-center gap-2.5 pl-1.5 pr-2 py-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             >
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xs font-black overflow-hidden ring-2 ring-violet-500/20">
-                {authUser?.avatarUrl || customAvatar ? (
+              <div
+                suppressHydrationWarning
+                className="w-8 h-8 rounded-full bg-gradient-to-tr from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xs font-black overflow-hidden ring-2 ring-violet-500/20"
+              >
+                {mounted && (authUser?.avatarUrl || customAvatar) ? (
                   <img
                     src={authUser?.avatarUrl || customAvatar || ''}
-                    alt={displayName}
+                    alt={mounted ? displayName : 'User'}
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  displayName.charAt(0).toUpperCase()
+                  <span suppressHydrationWarning>
+                    {mounted ? (displayName.charAt(0).toUpperCase() || 'U') : 'G'}
+                  </span>
                 )}
               </div>
               <div className="hidden sm:block text-left leading-tight">
-                <p className="text-[12px] font-bold text-slate-900 dark:text-slate-100">{displayName}</p>
-                <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{displayRole}</p>
+                <p suppressHydrationWarning className="text-[12px] font-bold text-slate-900 dark:text-slate-100">
+                  {mounted ? displayName : 'Guest User'}
+                </p>
+                <p suppressHydrationWarning className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                  {mounted ? displayRole : 'Member'}
+                </p>
               </div>
               <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
             </button>
             {userMenuOpen && (
               <div className="absolute right-0 top-full mt-2 w-64 bg-slate-900/95 backdrop-blur-2xl rounded-2xl shadow-2xl border border-white/10 py-2 z-50 text-slate-200">
                 <div className="px-4 py-2.5 border-b border-white/10">
-                  <p className="text-xs font-bold text-white">{displayName}</p>
-                  <p className="text-[11px] text-slate-400 truncate">
-                    {authUser
+                  <p suppressHydrationWarning className="text-xs font-bold text-white">
+                    {mounted ? displayName : 'Guest User'}
+                  </p>
+                  <p suppressHydrationWarning className="text-[11px] text-slate-400 truncate">
+                    {mounted && authUser
                       ? authUser.email?.endsWith('@wallet.resolvia.eth')
                         ? 'Web3 Connected · MetaMask'
                         : authUser.email
                       : 'Sign in to link your on-chain identity'}
                   </p>
-                  {authUser && (
+                  {mounted && authUser && (
                     <p className="text-[10px] font-mono text-violet-400 mt-1 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                       Wallet: {walletShort}

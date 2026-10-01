@@ -149,13 +149,17 @@ class MLPredictor:
                 "confidence": round(confidence, 2),
                 "probabilityBreakdown": probability_breakdown,
                 "topReasons": top_reasons,
+                "advisory": True,
+                "benchmarkType": "SYNTHETIC_BENCHMARK",
+                "disclaimer": "Advisory Only — Non-Binding Arbitral Assessment",
                 "modelInfo": {
                     "name": self.champion_name,
                     "sha256": self.model_sha256,
                     "featureCount": len(self.feature_names),
                     "trainingSamples": self.metadata.get("num_train_samples", 0),
-                    "testAccuracy": self.metadata.get("metrics", {}).get("test_accuracy", 0),
-                    "testF1": self.metadata.get("metrics", {}).get("test_f1_macro", 0),
+                    "benchmarkAccuracy": self.metadata.get("metrics", {}).get("test_accuracy", 0),
+                    "benchmarkF1": self.metadata.get("metrics", {}).get("test_f1_macro", 0),
+                    "accuracyType": "synthetic_benchmark_distribution",
                 },
             }
 

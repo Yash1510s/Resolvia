@@ -50,7 +50,9 @@ async function main() {
   // constructor; transfer coordination to the hub.
   await (await caseRegistry.setArbitrationHub(await hub.getAddress())).wait();
   await (await votingManager.setArbitrationHub(await hub.getAddress())).wait();
-  console.log("Coordinator wired: hub -> CaseRegistry + VotingManager");
+  await (await evidence.setCaseRegistry(await caseRegistry.getAddress())).wait();
+  await (await evidence.setArbitrationHub(await hub.getAddress())).wait();
+  console.log("Coordinator wired: hub -> CaseRegistry + VotingManager + EvidenceRegistry");
 
   const deployment = {
     network: network.name,

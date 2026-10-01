@@ -77,12 +77,17 @@ contract CaseRegistry {
             aiReportHash: bytes32(0),
             createdAt: block.timestamp,
             responseDeadline: block.timestamp + 2 days,
-            votingDeadline: block.timestamp + 7 days,
+            votingDeadline: 0,
             winningOutcome: 0
         });
 
         emit CaseCreated(caseCount, _caseNumber, _claimant, _respondent);
         return caseCount;
+    }
+
+    function setVotingDeadline(uint256 _caseId, uint256 _votingDeadline) external onlyHub {
+        require(_votingDeadline > block.timestamp, "Voting deadline must be in future");
+        cases[_caseId].votingDeadline = _votingDeadline;
     }
 
     function updateState(uint256 _caseId, CaseState _newState) external onlyHub {

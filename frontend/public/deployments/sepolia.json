@@ -1,0 +1,36 @@
+{
+  "network": "sepolia",
+  "chainId": "11155111",
+  "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
+  "deployedAt": "2026-10-01T06:40:39.571Z",
+  "deployer": "0x94072243e3344AE3d80509F6Db2e0cb212AdEe79",
+  "prototype": true,
+  "testnet": true,
+  "contracts": {
+    "ResolviaToken": "0xaD3C7096DAABc6C932087C0edfA1d2595372036f",
+    "EvidenceRegistry": "0xa8ed85D1a9d236449E15FEE6B2E8Df5dE0E168fb",
+    "CaseRegistry": "0x85C8C2408B9EA19D8d0C199Cf315CdE110C278f0",
+    "VotingManager": "0x0780A1F5733F315D8C20aE177fe793e62358bA07",
+    "ArbitrationHub": "0x8617d0ed2E6e1c82b926cC04F442018324Ba027F"
+  },
+  "demoAccounts": {
+    "admin": "0x94072243e3344AE3d80509F6Db2e0cb212AdEe79",
+    "claimant": "0x94072243e3344AE3d80509F6Db2e0cb212AdEe79",
+    "respondent": "0x94072243e3344AE3d80509F6Db2e0cb212AdEe79",
+    "jurors": [
+      "0x94072243e3344AE3d80509F6Db2e0cb212AdEe79",
+      "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+      "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"
+    ],
+    "interactiveJuror": "0x94072243e3344AE3d80509F6Db2e0cb212AdEe79"
+  },
+  "explorer": {
+    "token": "https://sepolia.etherscan.io/address/0xaD3C7096DAABc6C932087C0edfA1d2595372036f",
+    "evidence": "https://sepolia.etherscan.io/address/0xa8ed85D1a9d236449E15FEE6B2E8Df5dE0E168fb",
+    "cases": "https://sepolia.etherscan.io/address/0x85C8C2408B9EA19D8d0C199Cf315CdE110C278f0",
+    "voting": "https://sepolia.etherscan.io/address/0x0780A1F5733F315D8C20aE177fe793e62358bA07",
+    "hub": "https://sepolia.etherscan.io/address/0x8617d0ed2E6e1c82b926cC04F442018324Ba027F"
+  }
+}

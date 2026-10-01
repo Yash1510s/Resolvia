@@ -156,6 +156,7 @@ contract ArbitrationHub {
 
     /**
      * @notice Admin appoints the 5-juror panel. Requires both stakes locked.
+     *         Sets votingDeadline to 7 days from panel appointment.
      */
     function appointJurorPanel(uint256 _caseId, address[] memory _jurors) external onlyAdmin {
         require(_jurors.length == JUROR_PANEL_SIZE, "Panel must equal 5 jurors");
@@ -163,17 +164,21 @@ contract ArbitrationHub {
         require(c.state == CaseRegistry.CaseState.EVIDENCE_LOCKED, "Respondent has not staked");
         require(!isSettled[_caseId], "Case already settled");
 
+        uint256 votingDeadline = block.timestamp + 7 days;
+        caseRegistry.setVotingDeadline(_caseId, votingDeadline);
+
         jurorPanels[_caseId] = _jurors;
-        votingManager.assignJurorPanel(_caseId, _jurors, c.votingDeadline);
+        votingManager.assignJurorPanel(_caseId, _jurors, votingDeadline);
         caseRegistry.updateState(_caseId, CaseRegistry.CaseState.JURY_COMMIT);
         emit JurorPanelAppointed(_caseId, _jurors);
     }
 
     /**
-     * @notice Settle the case once quorum (>=3 revealed votes) is reached.
-     *         Finalizes the verdict and moves all funds (see distributeEscrow).
+     * @notice Settle the case once all 5 jurors reveal OR reveal window closes.
+     *         Permissionless: anyone can trigger settlement once timing criteria are met,
+     *         eliminating admin centralization.
      */
-    function settleCase(uint256 _caseId) external onlyAdmin nonReentrant {
+    function settleCase(uint256 _caseId) external nonReentrant {
         require(!isSettled[_caseId], "Already settled");
         CaseRegistry.CaseRecord memory c = getCase(_caseId);
         require(
@@ -183,9 +188,21 @@ contract ArbitrationHub {
 
         (uint256 claimantVotes, uint256 respondentVotes, uint256 splitVotes, uint256 total) =
             votingManager.getTally(_caseId);
-        require(total >= 3, "Quorum not reached");
 
-        uint8 outcome = computeOutcome(claimantVotes, respondentVotes, splitVotes);
+        bool allRevealed = (total == JUROR_PANEL_SIZE);
+        bool revealWindowClosed = (block.timestamp > c.votingDeadline + votingManager.REVEAL_GRACE());
+        require(
+            allRevealed || revealWindowClosed,
+            "Premature settlement: reveal window still active"
+        );
+
+        uint8 outcome;
+        if (total < 3) {
+            // Quorum not reached after window closed: refund both parties (split)
+            outcome = 3;
+        } else {
+            outcome = computeOutcome(claimantVotes, respondentVotes, splitVotes);
+        }
 
         // ── CEI: state changes before token transfers ──
         caseRegistry.finalizeVerdict(_caseId, outcome);
@@ -193,6 +210,10 @@ contract ArbitrationHub {
         distributeEscrow(_caseId, outcome, c);
     }
 
+    /**
+     * @notice Determine winning outcome. If claimantVotes == respondentVotes, or neither has
+     *         a strict plurality over splitVotes, outcome is 3 (Split Settlement).
+     */
     function computeOutcome(
         uint256 claimantVotes,
         uint256 respondentVotes,
@@ -200,14 +221,14 @@ contract ArbitrationHub {
     ) internal pure returns (uint8) {
         if (claimantVotes > respondentVotes && claimantVotes > splitVotes) return 1;
         if (respondentVotes > claimantVotes && respondentVotes > splitVotes) return 2;
-        return 3;
+        return 3; // Automatic tie / split handling
     }
 
     /**
      * @notice Escrow distribution:
-     *   winner  <- own stake + loser stake - reward pool (20% of loser stake)
-     *   jurors  <- reward pool split evenly
-     *   split   <- both stakes refunded, no rewards
+     *   winner  <- own stake + loser stake - juror reward pool + rounding dust
+     *   jurors  <- reward pool split equally AMONG REVEALED JURORS ONLY
+     *   split   <- both stakes refunded in full, no juror rewards
      */
     function distributeEscrow(
         uint256 _caseId,
@@ -227,17 +248,38 @@ contract ArbitrationHub {
         uint256 ownStake = outcome == 1 ? c.antiSpamStake : respStake;
         uint256 loserStake = outcome == 1 ? respStake : c.antiSpamStake;
 
-        uint256 rewardPool = (loserStake * JUROR_REWARD_PERCENT) / 100;
-        uint256 winnerPayout = ownStake + (loserStake - rewardPool);
+        address[] storage panel = jurorPanels[_caseId];
+        uint256 revealedCount = 0;
+        for (uint256 i = 0; i < panel.length; i++) {
+            if (votingManager.hasRevealed(_caseId, panel[i])) {
+                revealedCount++;
+            }
+        }
 
+        uint256 winnerPayout;
+        if (revealedCount == 0) {
+            // Edge case: zero reveals, 100% of loser stake goes to winner
+            winnerPayout = ownStake + loserStake;
+            require(token.transfer(winner, winnerPayout), "Winner payout failed");
+            emit StakeSettled(_caseId, winner, winnerPayout);
+            return;
+        }
+
+        uint256 rewardPool = (loserStake * JUROR_REWARD_PERCENT) / 100;
+        uint256 perJuror = rewardPool / revealedCount;
+        uint256 dust = rewardPool % revealedCount;
+
+        // Rounding dust preserved and credited to the winning party
+        winnerPayout = ownStake + (loserStake - rewardPool) + dust;
         require(token.transfer(winner, winnerPayout), "Winner payout failed");
         emit StakeSettled(_caseId, winner, winnerPayout);
 
-        address[] storage panel = jurorPanels[_caseId];
-        uint256 perJuror = rewardPool / panel.length;
+        // Distribute rewards strictly to jurors who completed their cryptographic reveal
         for (uint256 i = 0; i < panel.length; i++) {
-            require(token.transfer(panel[i], perJuror), "Juror reward failed");
-            emit JurorRewarded(_caseId, panel[i], perJuror);
+            if (votingManager.hasRevealed(_caseId, panel[i])) {
+                require(token.transfer(panel[i], perJuror), "Juror reward failed");
+                emit JurorRewarded(_caseId, panel[i], perJuror);
+            }
         }
     }
 

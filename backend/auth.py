@@ -45,9 +45,12 @@ MANIFEST_PATH = os.path.join(BASE_DIR, "..", "blockchain", "deployments", "local
 DB_PATH = os.path.join(BASE_DIR, "resolvia_auth.db")
 SECRET_DIR = os.path.join(BASE_DIR, "secret")
 
-JWT_TTL_SECONDS = 7 * 24 * 3600
+ACCESS_TOKEN_TTL_SECONDS = 3600  # 1 hour short-lived access token
+REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 3600  # 7 days refresh token
+JWT_TTL_SECONDS = ACCESS_TOKEN_TTL_SECONDS
 OTP_TTL_SECONDS = 300
 OTP_MAX_ATTEMPTS = 3
+OTP_LOCKOUT_SECONDS = 900  # 15 minutes lockout on 3 consecutive failed attempts
 OTP_REQUEST_COOLDOWN = 60  # seconds between requests for the same email
 
 
@@ -131,7 +134,7 @@ def _decrypt_key(blob: bytes) -> bytes:
 # ── Database ─────────────────────────────────────────────────────────────────
 
 def _db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
@@ -166,6 +169,14 @@ def _init_db() -> None:
                 code_hash TEXT NOT NULL,
                 expires_at REAL NOT NULL,
                 attempts INTEGER NOT NULL DEFAULT 0,
+                locked_until REAL DEFAULT 0,
+                created_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS refresh_tokens (
+                token_hash TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                expires_at REAL NOT NULL,
+                revoked INTEGER NOT NULL DEFAULT 0,
                 created_at REAL NOT NULL
             );
             CREATE TABLE IF NOT EXISTS wallet_nonces (
@@ -193,6 +204,14 @@ def _init_db() -> None:
                     conn.execute(f"ALTER TABLE users ADD COLUMN {col} {spec}")
                 except Exception:
                     pass
+
+        cur.execute("PRAGMA table_info(otps)")
+        existing_otp_cols = {row["name"] for row in cur.fetchall()}
+        if "locked_until" not in existing_otp_cols:
+            try:
+                conn.execute("ALTER TABLE otps ADD COLUMN locked_until REAL DEFAULT 0")
+            except Exception:
+                pass
 
 
 _init_db()
@@ -315,9 +334,29 @@ def _issue_token(user_id: int) -> str:
         "sub": str(user["id"]),  # RFC 7519 / PyJWT ≥2.10: sub must be a string
         "email": user["email"],
         "wallet": user["wallet"],
-        "exp": int(time.time()) + JWT_TTL_SECONDS,
+        "type": "access",
+        "exp": int(time.time()) + ACCESS_TOKEN_TTL_SECONDS,
     }
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+
+def _issue_refresh_token(user_id: int, conn: Optional[sqlite3.Connection] = None) -> str:
+    raw_token = secrets.token_urlsafe(64)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    expires_at = time.time() + REFRESH_TOKEN_TTL_SECONDS
+    if conn is not None:
+        conn.execute(
+            "INSERT INTO refresh_tokens (token_hash, user_id, expires_at, revoked, created_at) VALUES (?,?,?,0,?)",
+            (token_hash, user_id, expires_at, time.time()),
+        )
+    else:
+        with _db() as c:
+            c.execute(
+                "INSERT INTO refresh_tokens (token_hash, user_id, expires_at, revoked, created_at) VALUES (?,?,?,0,?)",
+                (token_hash, user_id, expires_at, time.time()),
+            )
+            c.commit()
+    return raw_token
 
 
 # ── Auth dependency ──────────────────────────────────────────────────────────
@@ -416,6 +455,10 @@ class OtpVerifyIn(BaseModel):
     email: str
     phone: Optional[str] = None
     code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class RefreshTokenIn(BaseModel):
+    refreshToken: str
 
 
 class GoogleIn(BaseModel):
@@ -518,6 +561,17 @@ def otp_request(body: OtpRequestIn):
         raise HTTPException(status_code=400, detail="Enter a valid email address")
     now = time.time()
     with _db() as conn:
+        locked = conn.execute(
+            "SELECT locked_until FROM otps WHERE email=? AND locked_until>? ORDER BY id DESC LIMIT 1",
+            (email, now),
+        ).fetchone()
+        if locked:
+            remaining_mins = max(1, int((locked["locked_until"] - now) // 60) + 1)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Account verification is locked due to too many failed attempts. Try again in {remaining_mins} minute(s)."
+            )
+
         recent = conn.execute(
             "SELECT created_at FROM otps WHERE email=? AND created_at>? ORDER BY id DESC LIMIT 1",
             (email, now - OTP_REQUEST_COOLDOWN),
@@ -538,23 +592,23 @@ def otp_request(body: OtpRequestIn):
             print(f"[auth] SMTP delivery failed for {email}: {e}")
             raise HTTPException(status_code=502, detail="Could not deliver the verification email — try again shortly.")
         with _db() as conn:
-            conn.execute("DELETE FROM otps WHERE email=?", (email,))
+            conn.execute("DELETE FROM otps WHERE email=? AND (locked_until IS NULL OR locked_until<=?)", (email, now))
             conn.execute(
-                "INSERT INTO otps (email, code_hash, expires_at, attempts, created_at) VALUES (?,?,?,?,?)",
-                (email, code_hash, now + OTP_TTL_SECONDS, 0, now),
+                "INSERT INTO otps (email, code_hash, expires_at, attempts, locked_until, created_at) VALUES (?,?,?,?,?,?)",
+                (email, code_hash, now + OTP_TTL_SECONDS, 0, 0, now),
             )
         print(f"[auth] OTP emailed to {email}")
     else:
-        if APP_ENV != "dev":
+        if APP_ENV.lower() not in ("dev", "development", "local"):
             raise HTTPException(status_code=503, detail="Email delivery is not configured on this server (set SMTP_HOST etc.).")
         # Dev only: show the code so demos work without an email server.
         with _db() as conn:
-            conn.execute("DELETE FROM otps WHERE email=?", (email,))
+            conn.execute("DELETE FROM otps WHERE email=? AND (locked_until IS NULL OR locked_until<=?)", (email, now))
             conn.execute(
-                "INSERT INTO otps (email, code_hash, expires_at, attempts, created_at) VALUES (?,?,?,?,?)",
-                (email, code_hash, now + OTP_TTL_SECONDS, 0, now),
+                "INSERT INTO otps (email, code_hash, expires_at, attempts, locked_until, created_at) VALUES (?,?,?,?,?,?)",
+                (email, code_hash, now + OTP_TTL_SECONDS, 0, 0, now),
             )
-        print(f"[auth] OTP for {email}: {code}")
+        print(f"[auth] [DEV MODE ONLY] OTP for {email}: {code}")
         out["devCode"] = code
     return out
 
@@ -566,21 +620,35 @@ def otp_verify(body: OtpVerifyIn):
     now = time.time()
     with _db() as conn:
         row = conn.execute(
-            "SELECT * FROM otps WHERE email=? AND expires_at>? ORDER BY id DESC LIMIT 1",
-            (email, now),
+            "SELECT * FROM otps WHERE email=? ORDER BY id DESC LIMIT 1",
+            (email,),
         ).fetchone()
         if not row:
-            raise HTTPException(status_code=400, detail="Invalid or expired code")
-        if row["attempts"] >= OTP_MAX_ATTEMPTS:
-            raise HTTPException(status_code=429, detail="Too many attempts — request a new code")
+            raise HTTPException(status_code=400, detail="No verification code found. Please request a new code.")
+        if row["locked_until"] and now < row["locked_until"]:
+            remaining_mins = max(1, int((row["locked_until"] - now) // 60) + 1)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Account verification is locked due to too many failed attempts. Try again in {remaining_mins} minute(s)."
+            )
+        if now > row["expires_at"]:
+            raise HTTPException(status_code=400, detail="Verification code has expired. Please request a new code.")
         if row["code_hash"] != code_hash:
             new_attempts = row["attempts"] + 1
-            conn.execute("UPDATE otps SET attempts=? WHERE id=?", (new_attempts, row["id"]))
             if new_attempts >= OTP_MAX_ATTEMPTS:
-                raise HTTPException(status_code=429, detail="Maximum attempts reached. Please request a new code.")
+                lock_until = now + OTP_LOCKOUT_SECONDS
+                conn.execute("UPDATE otps SET attempts=?, locked_until=? WHERE id=?", (new_attempts, lock_until, row["id"]))
+                conn.commit()
+                raise HTTPException(
+                    status_code=429,
+                    detail="Too many failed attempts. Account verification is locked for 15 minutes."
+                )
+            conn.execute("UPDATE otps SET attempts=? WHERE id=?", (new_attempts, row["id"]))
+            conn.commit()
             remaining = OTP_MAX_ATTEMPTS - new_attempts
             raise HTTPException(status_code=400, detail=f"Invalid code. {remaining} attempt(s) remaining.")
         conn.execute("DELETE FROM otps WHERE id=?", (row["id"],))
+        conn.commit()
     name = email.split("@")[0].replace(".", " ").replace("_", " ").strip().title()
     user_id = _find_or_create_user(name, email)
     if body.phone and body.phone.strip():
@@ -588,7 +656,43 @@ def otp_verify(body: OtpVerifyIn):
             conn_update.execute("UPDATE users SET phone=? WHERE id=?", (body.phone.strip(), user_id))
     wallet = _provision_wallet(user_id)
     user = _get_user_record(user_id)
-    return {"status": "SUCCESS", "token": _issue_token(user_id), "user": user}
+    return {
+        "status": "SUCCESS",
+        "token": _issue_token(user_id),
+        "refreshToken": _issue_refresh_token(user_id),
+        "expiresIn": ACCESS_TOKEN_TTL_SECONDS,
+        "user": user,
+    }
+
+
+@router.post("/auth/refresh")
+def refresh_access_token(body: RefreshTokenIn):
+    raw_token = body.refreshToken.strip()
+    if not raw_token:
+        raise HTTPException(status_code=400, detail="Missing refresh token")
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    now = time.time()
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT * FROM refresh_tokens WHERE token_hash=? AND revoked=0 AND expires_at>?",
+            (token_hash, now),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+        user_id = row["user_id"]
+        # Rotate refresh token
+        conn.execute("UPDATE refresh_tokens SET revoked=1 WHERE token_hash=?", (token_hash,))
+        new_access = _issue_token(user_id)
+        new_refresh = _issue_refresh_token(user_id, conn=conn)
+        conn.commit()
+    user = _get_user_record(user_id)
+    return {
+        "status": "SUCCESS",
+        "token": new_access,
+        "refreshToken": new_refresh,
+        "expiresIn": ACCESS_TOKEN_TTL_SECONDS,
+        "user": user,
+    }
 
 
 @router.post("/auth/google")
@@ -610,7 +714,13 @@ def google_signin(body: GoogleIn):
     user_id = _find_or_create_user(name, email, google_id=info.get("sub"))
     wallet = _provision_wallet(user_id)
     user = _get_user_record(user_id)
-    return {"status": "SUCCESS", "token": _issue_token(user_id), "user": user}
+    return {
+        "status": "SUCCESS",
+        "token": _issue_token(user_id),
+        "refreshToken": _issue_refresh_token(user_id),
+        "expiresIn": ACCESS_TOKEN_TTL_SECONDS,
+        "user": user,
+    }
 
 
 @router.post("/auth/github")
@@ -680,7 +790,13 @@ def github_signin(body: GitHubIn):
     user_id = _find_or_create_user(name, email, github_id=github_id)
     wallet = _provision_wallet(user_id)
     user = _get_user_record(user_id)
-    return {"status": "SUCCESS", "token": _issue_token(user_id), "user": user}
+    return {
+        "status": "SUCCESS",
+        "token": _issue_token(user_id),
+        "refreshToken": _issue_refresh_token(user_id),
+        "expiresIn": ACCESS_TOKEN_TTL_SECONDS,
+        "user": user,
+    }
 
 
 class WalletIn(BaseModel):
@@ -760,7 +876,13 @@ def wallet_verify(body: WalletVerifyIn):
         conn.commit()
     wallet = _provision_wallet(user_id)
     user = _get_user_record(user_id)
-    return {"status": "SUCCESS", "token": _issue_token(user_id), "user": user}
+    return {
+        "status": "SUCCESS",
+        "token": _issue_token(user_id),
+        "refreshToken": _issue_refresh_token(user_id),
+        "expiresIn": ACCESS_TOKEN_TTL_SECONDS,
+        "user": user,
+    }
 
 
 @router.post("/auth/wallet")
@@ -780,7 +902,13 @@ def wallet_signin(body: WalletIn):
         conn.commit()
     wallet = _provision_wallet(user_id)
     user = _get_user_record(user_id)
-    return {"status": "SUCCESS", "token": _issue_token(user_id), "user": user}
+    return {
+        "status": "SUCCESS",
+        "token": _issue_token(user_id),
+        "refreshToken": _issue_refresh_token(user_id),
+        "expiresIn": ACCESS_TOKEN_TTL_SECONDS,
+        "user": user,
+    }
 
 
 @router.get("/auth/me")
@@ -904,7 +1032,7 @@ def vote_reveal(body: RevealIn, user: dict = Depends(get_current_user)):
 class AnchorIn(BaseModel):
     caseId: int = Field(ge=0)
     sha256: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
-    ipfsCid: str = Field(min_length=1, max_length=128)
+    ipfsCid: Optional[str] = Field(default="", max_length=128)
     tier: int = Field(ge=0, le=3, default=0)  # AccessTier enum
 
 
@@ -966,7 +1094,7 @@ def evidence_anchor(body: AnchorIn, user: dict = Depends(get_current_user)):
         + bytes.fromhex(body.sha256)  # exactly 32 bytes
         + _pad32(96)  # head: 3 fixed slots before the dynamic string
         + _pad32(body.tier)
-        + _abi_encode_string(body.ipfsCid)
+        + _abi_encode_string(body.ipfsCid or "")
     )
     out = _signed_tx(user, _load_evidence_registry(), data, gas=300_000)
     out["caseId"] = body.caseId

@@ -216,3 +216,12 @@ Serves the AI analysis bridge **and** the auth + assigned-wallet service
 so you can sign in without an email server. Try the full flow from a browser:
 **Landing → Get Started → enter email → use the shown dev code → your wallet
 is assigned**, then open the on-chain jury console to vote with it.
+
+---
+
+## 📚 Complete Project Documentation
+
+- 🚀 [DEPLOY_READINESS_REPORT.md](file:///DEPLOY_READINESS_REPORT.md) — Comprehensive engineering audit report and production readiness verdict.
+- 📖 [DEPLOYMENT.md](file:///DEPLOYMENT.md) — Step-by-step operations manual for local devnet and Ethereum Sepolia testnet.
+- 🎓 [KNOWN_LIMITATIONS.md](file:///KNOWN_LIMITATIONS.md) — Architectural limitations, trade-offs, and 15 viva defense questions & answers.
+

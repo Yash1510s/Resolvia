@@ -3,7 +3,7 @@ Resolvia Backend Server (FastAPI)
 Bridges web application, AI analysis service, and smart contract events.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -12,6 +12,12 @@ import sys
 import os
 import base64
 import json
+import hashlib
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 # Load environment variables from .env
 for _env_path in [
@@ -33,11 +39,28 @@ for _env_path in [
             pass
 
 # Add ai-engine path to import analysis pipeline
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "ai-engine"))
+_ai_engine_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ai-engine"))
+if _ai_engine_path not in sys.path:
+    sys.path.insert(0, _ai_engine_path)
+
 try:
-    from analysis_pipeline import EvidenceAnalyzer
-except ImportError:
-    EvidenceAnalyzer = None
+    from analysis_pipeline import EvidenceAnalyzer  # type: ignore
+except (ImportError, ModuleNotFoundError):
+    try:
+        import importlib.util
+        _pipeline_file = os.path.join(_ai_engine_path, "analysis_pipeline.py")
+        if os.path.exists(_pipeline_file):
+            _spec = importlib.util.spec_from_file_location("analysis_pipeline", _pipeline_file)
+            if _spec and _spec.loader:
+                _mod = importlib.util.module_from_spec(_spec)
+                _spec.loader.exec_module(_mod)
+                EvidenceAnalyzer = getattr(_mod, "EvidenceAnalyzer", None)
+            else:
+                EvidenceAnalyzer = None
+        else:
+            EvidenceAnalyzer = None
+    except Exception:
+        EvidenceAnalyzer = None
 
 # IPFS Pinning service
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -47,13 +70,21 @@ except ImportError:
     ipfs_service = None
 
 # Auth + custodial wallet module
-from auth import router as auth_router  # noqa: E402
+from auth import router as auth_router, get_current_user  # noqa: E402
+
+limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
 
 app = FastAPI(
     title="Resolvia Arbitration API",
     description="Backend API for AI-Assisted Decentralized Dispute Arbitration",
     version="1.1.0"
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+APP_ENV = os.environ.get("APP_ENV", "dev").lower()
+is_prod = APP_ENV in ("production", "prod")
 
 # Production-ready CORS origin configuration
 ALLOWED_ORIGINS = [
@@ -65,16 +96,34 @@ ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 
+# Production safeguard: disallow wildcard '*' in production
+if is_prod:
+    ALLOWED_ORIGINS = [o for o in ALLOWED_ORIGINS if o != "*"]
+    if not ALLOWED_ORIGINS:
+        ALLOWED_ORIGINS = ["https://resolvia.org", "http://localhost:3000"]
+
+allow_wildcard = ("*" in ALLOWED_ORIGINS) and not is_prod
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS if "*" not in ALLOWED_ORIGINS else ["*"],
-    allow_credentials=True if "*" not in ALLOWED_ORIGINS else False,
+    allow_origins=ALLOWED_ORIGINS if not allow_wildcard else ["*"],
+    allow_credentials=False if allow_wildcard else True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Auth (email OTP / Google) + custodial wallet + wallet-signed voting
 app.include_router(auth_router, prefix="/api")
+
+@app.get("/health")
+@app.get("/api/health")
+def health_check():
+    return {
+        "status": "healthy",
+        "service": "Resolvia Backend & AI Advisory",
+        "version": "1.1.0",
+        "app_env": APP_ENV
+    }
 
 class DisputeRequest(BaseModel):
     caseNumber: str
@@ -105,16 +154,43 @@ class IPFSUploadRequest(BaseModel):
     contentBase64: str
     sha256: str
 
+ALLOWED_EVIDENCE_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".txt", ".json", ".doc", ".docx", ".csv"}
+MAX_EVIDENCE_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
+
 @app.post("/api/ipfs/upload")
-def upload_to_ipfs(req: IPFSUploadRequest):
+@limiter.limit("10/minute")
+def upload_to_ipfs(
+    req: IPFSUploadRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
     """Upload evidence file to IPFS via Pinata and return real CIDv1."""
     if not ipfs_service:
         raise HTTPException(status_code=500, detail="IPFS service module unavailable")
+
+    _, ext = os.path.splitext(req.fileName.lower())
+    if ext not in ALLOWED_EVIDENCE_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file format '{ext}'. Allowed formats: {', '.join(sorted(ALLOWED_EVIDENCE_EXTENSIONS))}"
+        )
+
     try:
         raw_bytes = base64.b64decode(req.contentBase64)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid base64 payload: {e}")
-    return ipfs_service.pin_file_to_ipfs(raw_bytes, req.fileName, req.sha256)
+
+    if len(raw_bytes) > MAX_EVIDENCE_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File exceeds maximum allowed size of 25MB")
+
+    calculated_hash = hashlib.sha256(raw_bytes).hexdigest()
+    if calculated_hash.lower() != req.sha256.strip().lower():
+        raise HTTPException(
+            status_code=400,
+            detail="SHA-256 integrity check failed. Uploaded content does not match the provided hash."
+        )
+
+    return ipfs_service.pin_file_to_ipfs(raw_bytes, req.fileName, calculated_hash.lower())
 
 @app.get("/api/ipfs/status")
 def get_ipfs_status():
@@ -153,7 +229,12 @@ def health_check():
     }
 
 @app.post("/api/ai/analyze")
-def trigger_ai_analysis(req: AIAnalysisRequest):
+@limiter.limit("10/minute")
+def trigger_ai_analysis(
+    req: AIAnalysisRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
     if not EvidenceAnalyzer:
         raise HTTPException(status_code=500, detail="AI analysis pipeline unavailable")
     
@@ -200,7 +281,12 @@ def trigger_ai_analysis(req: AIAnalysisRequest):
     return {"status": "SUCCESS", "report": report}
 
 @app.post("/api/ai/analyze/stream")
-def stream_ai_analysis(req: AIAnalysisRequest):
+@limiter.limit("10/minute")
+def stream_ai_analysis(
+    req: AIAnalysisRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
     if not EvidenceAnalyzer:
         raise HTTPException(status_code=500, detail="AI analysis pipeline unavailable")
 

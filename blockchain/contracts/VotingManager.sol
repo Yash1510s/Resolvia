@@ -98,6 +98,10 @@ contract VotingManager {
         require(!v.revealed, "Already revealed");
         require(_voteChoice >= 1 && _voteChoice <= 3, "Invalid vote choice");
         require(
+            block.timestamp > votingDeadlines[_caseId],
+            "Commit window still open"
+        );
+        require(
             block.timestamp <= votingDeadlines[_caseId] + REVEAL_GRACE,
             "Reveal window closed"
         );
@@ -120,6 +124,10 @@ contract VotingManager {
         else if (_voteChoice == 3) tally.splitVotes++;
 
         emit VoteRevealed(_caseId, msg.sender, VoteChoice(_voteChoice));
+    }
+
+    function hasRevealed(uint256 _caseId, address _juror) external view returns (bool) {
+        return jurorVotes[_caseId][_juror].revealed;
     }
 
     function getTally(uint256 _caseId) external view returns (uint256 claimant, uint256 respondent, uint256 split, uint256 total) {

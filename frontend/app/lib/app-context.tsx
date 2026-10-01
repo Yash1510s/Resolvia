@@ -729,12 +729,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             disputeAmount: targetCase.disputeAmount,
           };
 
+          const token = typeof window !== 'undefined' ? localStorage.getItem('resolvia_token') : null;
+          const authHeaders: Record<string, string> = {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          };
+
           // Try streaming endpoint first
           let streamed = false;
           try {
             const streamRes = await fetch('/api/backend/ai/analyze/stream', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: authHeaders,
               body: JSON.stringify(payload),
             });
             if (streamRes.ok && streamRes.body) {
@@ -773,7 +779,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (!streamed || !aiReport) {
             const res = await fetch('/api/backend/ai/analyze', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: authHeaders,
               body: JSON.stringify(payload),
             });
             if (res.ok) {
@@ -985,19 +991,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         fileBase64 = btoa(fileName + ':resolvia-evidence-placeholder');
       }
 
-      let ipfsCid = 'bafybei' + h.slice(0, 44);
-      let gatewayUrl = `https://gateway.pinata.cloud/ipfs/${ipfsCid}`;
+      let ipfsCid = '';
+      let gatewayUrl = '';
+      const token = typeof window !== 'undefined' ? localStorage.getItem('resolvia_token') : null;
       try {
         const ipfsRes = await fetch('/api/backend/ipfs/upload', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({ fileName, contentBase64: fileBase64, sha256: h }),
         });
         if (ipfsRes.ok) {
           const ipfsData = await ipfsRes.json();
           if (ipfsData.ipfsCid) {
             ipfsCid = ipfsData.ipfsCid;
-            gatewayUrl = ipfsData.gatewayUrl || gatewayUrl;
+            gatewayUrl = ipfsData.gatewayUrl || '';
           }
         }
       } catch (err) {
@@ -1009,15 +1019,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       let onChainResult: { status: 'ANCHORED' | 'PENDING' | 'FAILED'; txHash?: string; blockNumber?: number | null; error?: string } = { status: 'PENDING' };
       try {
         const numericId = parseInt(caseId.replace(/\D/g, '') || '84', 10);
-        const token = typeof window !== 'undefined' ? localStorage.getItem('resolvia_token') : null;
         onChainResult = await anchorEvidenceOnChain({ caseId: numericId, sha256: h, ipfsCid, tier: 0 }, token);
       } catch {
         /* local testnet fallback */
       }
 
       const isAnchored = onChainResult.status === 'ANCHORED';
-      const tx = onChainResult.txHash || rndTx();
-      const blk = onChainResult.blockNumber ?? (6286600 + Math.floor(Math.random() * 50));
+      const tx = onChainResult.txHash || (isAnchored ? rndTx() : '');
+      const blk = onChainResult.blockNumber ?? undefined;
 
       setCases((prev) =>
         prev.map((c) =>
@@ -1055,7 +1064,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                     actorRole: 'Party',
                     timestamp: tsPretty(),
                     txHash: tx,
-                    blockNumber: blk,
+                    blockNumber: blk ?? 0,
                     metadataHash: h,
                     details: `Exhibit ${fileName} hashed (SHA-256) and ${isAnchored ? 'anchored on EvidenceRegistry' : 'fingerprinted'}; hash ${formatHash(h, 12)}…`,
                   },

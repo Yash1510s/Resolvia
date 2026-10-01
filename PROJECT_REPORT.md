@@ -1,6 +1,6 @@
 # Resolvia 2.0 — Project Report, Progress & Roadmap
 
-**Date:** 8 September 2026 · **Status:** Working full-stack prototype (frontend + backend + local chain) · **Repo:** `github.com/vipu2004/Resolvia_2.0` (commit made, push pending)
+**Date:** 8 September 2026 · **Status:** Working full-stack prototype (frontend + backend + local chain) · **Repo:** `github.com/Yash1510s/Resolvia` (commit made, push pending)
 
 ---
 
@@ -110,7 +110,7 @@ Highlights (all verified implemented, not stubs):
 ## 4. What's Left — Prioritised
 
 ### P0 — Unblock & ship the demo (this week)
-1. **Push to GitHub** — you share a PAT (or run `git push` yourself from the repo), and the repo is live at `vipu2004/Resolvia_2.0`.
+1. **Push to GitHub** — you share a PAT (or run `git push` yourself from the repo), and the repo is live at `Yash1510s/Resolvia`.
 2. **Google OAuth client ID** — set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (frontend) + `GOOGLE_CLIENT_ID` (backend); the Google button auto-enables.
 3. **LLM Advisory provider decision** — pick one:
    - *External API* (OpenAI/Groq/Gemini) — fastest, needs an API key; **or**

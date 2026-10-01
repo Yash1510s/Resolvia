@@ -37,7 +37,8 @@ export interface Deployment {
   chainId: string;
   deployedAt: string;
   contracts: Record<string, string>;
-  demoAccounts: {
+  explorer?: Record<string, string>;
+  demoAccounts?: {
     admin: string;
     claimant: string;
     respondent: string;
@@ -176,9 +177,11 @@ export function getWallet(account: DemoAccount): Wallet {
   return new Wallet(account.pk, getProvider());
 }
 
-export async function fetchDeployment(): Promise<Deployment | null> {
+export async function fetchDeployment(network?: string): Promise<Deployment | null> {
   try {
-    const res = await fetch("/api/deployments", { cache: "no-store" });
+    const net = network || process.env.NEXT_PUBLIC_NETWORK || "";
+    const url = net ? `/api/deployments?network=${encodeURIComponent(net)}` : "/api/deployments";
+    const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return null;
     return (await res.json()) as Deployment;
   } catch {
@@ -281,7 +284,7 @@ export async function initiateDisputeOnChain(
 
     let resp = respondentAddr.trim();
     if (!resp.startsWith('0x') || resp.length !== 42) {
-      resp = dep.demoAccounts.respondent;
+      resp = dep.demoAccounts?.respondent || ACCOUNTS.respondent.address;
     }
 
     const claimantSigner = getWallet(ACCOUNTS.claimant);

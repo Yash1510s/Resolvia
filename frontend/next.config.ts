@@ -1,11 +1,16 @@
 import type { NextConfig } from "next";
 
+const devOrigins = (process.env.ALLOWED_DEV_ORIGINS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 const nextConfig: NextConfig = {
-  // Allow the sandbox preview host to load dev resources (HMR, fonts, etc.).
-  // Preview URLs follow the pattern: {port}-{sandboxId}.e2b.app
+  // Allow local development and optional container/cloud preview origins
   allowedDevOrigins: [
-    "3000-i1ie2023w4zagaf97yvcn.e2b.app",
-    "3000-ig56cyynhn77r9e0lehhb.e2b.app",
+    "localhost:3000",
+    "127.0.0.1:3000",
+    ...devOrigins,
   ],
 };
 

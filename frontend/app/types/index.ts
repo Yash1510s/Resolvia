@@ -103,7 +103,9 @@ export interface MLPrediction {
     featureCount: number;
     trainingSamples?: number;
     testAccuracy?: number;
+    benchmarkAccuracy?: number;
     testF1?: number;
+    accuracyType?: string;
   };
 }
 

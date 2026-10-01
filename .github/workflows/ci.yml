@@ -22,13 +22,13 @@ jobs:
       - run: npm ci
       - name: Typecheck
         run: npx tsc --noEmit
-      - name: Unit tests (crypto + commit-reveal)
+      - name: Unit tests (crypto + commitment + UI)
         run: npm test
       - name: Production build
         run: npm run build
 
   backend:
-    name: Backend — syntax + imports
+    name: Backend — security tests & API validation
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -49,11 +49,31 @@ jobs:
           import server, auth, state_store
           paths = sorted(server.app.openapi()['paths'].keys())
           print('\n'.join(paths))
-          assert '/api/wallet/evidence/anchor' in paths
-          assert '/api/evidence/verify' in paths
-          assert '/api/state' in paths
+          assert '/api/health' in paths
+          assert '/api/ai/analyze' in paths
+          assert '/api/ipfs/upload' in paths
+          assert '/api/auth/refresh' in paths
           print('API surface OK')
           "
+      - name: Run Phase 2 backend security test suite
+        run: APP_ENV=dev python tests/test_phase2_security.py
+
+  ai-engine:
+    name: AI Engine — injection defenses & ML transparency
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ai-engine/requirements.txt
+      - run: pip install -r requirements.txt
+      - name: Run AI security and bias test suite
+        run: python tests/test_ai_security_and_bias.py
 
   contracts:
     name: Contracts — compile + test (in-process Hardhat)

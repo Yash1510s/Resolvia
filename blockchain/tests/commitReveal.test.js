@@ -32,8 +32,21 @@ describe("VotingManager — commit-reveal (real hash math)", function () {
     return { vm, admin, panel, deadline };
   }
 
-  it("accepts a valid commitment and reveal, updates tally", async () => {
+  it("reverts early reveal while commit window is still open", async () => {
     const { vm, panel } = await deployFixture();
+    const juror = panel[0];
+    const salt = ethers.hexlify(ethers.randomBytes(32));
+    const commitment = packCommitment(1, salt, 1n, juror.address);
+
+    await vm.connect(juror).commitVote(1, commitment);
+    // Attempt to reveal immediately without time advance
+    await expect(vm.connect(juror).revealVote(1, 1, salt)).to.be.revertedWith(
+      "Commit window still open"
+    );
+  });
+
+  it("accepts a valid commitment and reveal, updates tally", async () => {
+    const { vm, panel, deadline } = await deployFixture();
     const juror = panel[0];
     const salt = ethers.hexlify(ethers.randomBytes(32));
     const commitment = packCommitment(1, salt, 1n, juror.address);
@@ -42,6 +55,9 @@ describe("VotingManager — commit-reveal (real hash math)", function () {
     const mid = await vm.jurorVotes(1, juror.address);
     expect(mid.committed).to.equal(true);
     expect(mid.revealed).to.equal(false);
+
+    // Advance time past commit deadline into reveal grace window
+    await time.increaseTo(deadline + 1);
 
     await vm.connect(juror).revealVote(1, 1, salt);
     const [claimant, respondent, split, total] = await vm.getTally(1);
@@ -52,25 +68,27 @@ describe("VotingManager — commit-reveal (real hash math)", function () {
   });
 
   it("rejects a reveal with the wrong salt", async () => {
-    const { vm, panel } = await deployFixture();
+    const { vm, panel, deadline } = await deployFixture();
     const juror = panel[1];
     const salt = ethers.hexlify(ethers.randomBytes(32));
     const wrongSalt = ethers.hexlify(ethers.randomBytes(32));
     const commitment = packCommitment(2, salt, 1n, juror.address);
 
     await vm.connect(juror).commitVote(1, commitment);
+    await time.increaseTo(deadline + 1);
     await expect(vm.connect(juror).revealVote(1, 2, wrongSalt)).to.be.revertedWith(
       "Cryptographic commitment mismatch"
     );
   });
 
   it("rejects a reveal with the wrong vote choice", async () => {
-    const { vm, panel } = await deployFixture();
+    const { vm, panel, deadline } = await deployFixture();
     const juror = panel[2];
     const salt = ethers.hexlify(ethers.randomBytes(32));
     const commitment = packCommitment(1, salt, 1n, juror.address);
 
     await vm.connect(juror).commitVote(1, commitment);
+    await time.increaseTo(deadline + 1);
     await expect(vm.connect(juror).revealVote(1, 2, salt)).to.be.revertedWith(
       "Cryptographic commitment mismatch"
     );
@@ -86,6 +104,8 @@ describe("VotingManager — commit-reveal (real hash math)", function () {
     // Commitment was honestly computed for CASE 1…
     const commitment = packCommitment(1, salt, 1n, juror.address);
     await vm.connect(juror).commitVote(2, commitment);
+    // Advance past deadline into reveal window
+    await time.increaseTo(deadline + 1);
     // …but revealing it in case 2 must fail: hash doesn't bind to case 2.
     await expect(vm.connect(juror).revealVote(2, 1, salt)).to.be.revertedWith(
       "Cryptographic commitment mismatch"
@@ -100,7 +120,7 @@ describe("VotingManager — commit-reveal (real hash math)", function () {
   });
 
   it("rejects double-commit and double-reveal", async () => {
-    const { vm, panel } = await deployFixture();
+    const { vm, panel, deadline } = await deployFixture();
     const juror = panel[4];
     const salt = ethers.hexlify(ethers.randomBytes(32));
     const commitment = packCommitment(3, salt, 1n, juror.address);
@@ -109,6 +129,7 @@ describe("VotingManager — commit-reveal (real hash math)", function () {
     await expect(vm.connect(juror).commitVote(1, commitment)).to.be.revertedWith(
       "Already committed"
     );
+    await time.increaseTo(deadline + 1);
     await vm.connect(juror).revealVote(1, 3, salt);
     await expect(vm.connect(juror).revealVote(1, 3, salt)).to.be.revertedWith(
       "Already revealed"

@@ -56,9 +56,13 @@ export function ProfileCustomizerModal({ open, onClose }: Props) {
       const sha256 = await computeSha256Bytes(buf);
       const base64 = arrayBufferToBase64(buf);
 
+      const token = typeof window !== 'undefined' ? localStorage.getItem('resolvia_token') : null;
       const res = await fetch('/api/backend/ipfs/upload', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           fileName: file.name,
           contentBase64: base64,
@@ -66,11 +70,11 @@ export function ProfileCustomizerModal({ open, onClose }: Props) {
         }),
       });
 
-      if (!res.ok) throw new Error('Pinata upload failed');
+      if (!res.ok) throw new Error('IPFS upload failed');
       const data = await res.json();
       return {
-        ipfsCid: data.ipfsCid || `bafybei${sha256.slice(0, 44)}`,
-        gatewayUrl: data.gatewayUrl || `https://gateway.pinata.cloud/ipfs/${data.ipfsCid}`,
+        ipfsCid: data.ipfsCid || '',
+        gatewayUrl: data.gatewayUrl || '',
       };
     } catch (err) {
       console.warn('IPFS upload fallback:', err);

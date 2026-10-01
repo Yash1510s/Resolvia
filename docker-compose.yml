@@ -31,6 +31,11 @@ services:
       - ./blockchain/deployments:/app/blockchain/deployments
     depends_on:
       - blockchain
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   frontend:

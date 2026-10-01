@@ -67,7 +67,7 @@ interface UploadSlot {
   url: string;
   ipfsCid?: string;
   gatewayUrl?: string;
-  status: 'PENDING' | 'HASHING' | 'PINNING' | 'ANCHORED';
+  status: 'PENDING' | 'HASHING' | 'PINNING' | 'ANCHORED' | 'VERIFIED';
 }
 
 interface Witness {
@@ -193,10 +193,14 @@ export default function CreateCasePage() {
     // Call real IPFS upload via backend Pinata service
     let ipfsCid = '';
     let gatewayUrl = '';
+    const token = typeof window !== 'undefined' ? localStorage.getItem('resolvia_token') : null;
     try {
       const res = await fetch('/api/backend/ipfs/upload', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ fileName: realName, contentBase64: fileBase64, sha256: h }),
       });
       if (res.ok) {
@@ -208,15 +212,16 @@ export default function CreateCasePage() {
       console.warn('IPFS upload fallback:', err);
     }
 
-    if (!ipfsCid) {
-      ipfsCid = `bafybei${h.slice(0, 44)}`;
-      gatewayUrl = `https://gateway.pinata.cloud/ipfs/${ipfsCid}`;
-    }
-
     setUploads((prev) =>
       prev.map((u) =>
         u.fileName === slot.fileName
-          ? { ...u, sha256: h, ipfsCid, gatewayUrl, status: 'ANCHORED' }
+          ? {
+              ...u,
+              sha256: h,
+              ipfsCid,
+              gatewayUrl,
+              status: ipfsCid ? 'ANCHORED' : 'VERIFIED',
+            }
           : u
       )
     );
