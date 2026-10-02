@@ -49,11 +49,32 @@ function Dashboard() {
   }, [authLoading, authUser, router]);
 
   const repScore = useMemo(() => {
-    if (!jurorHistory || jurorHistory.length === 0) return 780;
+    if (!jurorHistory || jurorHistory.length === 0) return 500;
     const onTime = jurorHistory.filter((h) => h.onTime).length;
     const onTimePct = Math.round((onTime / jurorHistory.length) * 100);
     return Math.min(1000, Math.max(500, 500 + Math.round(onTimePct * 5)));
   }, [jurorHistory]);
+
+  const userLevel = useMemo(() => {
+    if (repScore >= 800) return { title: 'Level 3 — Master Juror', short: 'Master' };
+    if (repScore >= 600 || (jurorHistory && jurorHistory.length > 0)) return { title: 'Level 2 — Contributor', short: 'Contributor' };
+    return { title: 'Level 1 — Novice', short: 'Novice' };
+  }, [repScore, jurorHistory]);
+
+  const helpfulVotes = useMemo(() => {
+    if (!jurorHistory || jurorHistory.length === 0) return 0;
+    return jurorHistory.filter((h) => h.reputationDelta > 0).length;
+  }, [jurorHistory]);
+
+  const badgesEarned = useMemo(() => {
+    let count = 0;
+    const asJurorCount = cases.filter((c) => c.myRole === 'JUROR').length;
+    if (asJurorCount > 0 || (jurorHistory && jurorHistory.length > 0)) count += 1;
+    if (cases.some((c) => c.myRole === 'CLAIMANT' || c.myRole === 'RESPONDENT')) count += 1;
+    if (authUser?.wallet || authUser?.email) count += 1;
+    if (repScore >= 800) count += 1;
+    return count;
+  }, [cases, jurorHistory, authUser, repScore]);
 
   // Hydration-safe: server (UTC) and browser (local TZ) can disagree on the time of day.
   const [mounted, setMounted] = useState(false);
@@ -402,7 +423,7 @@ function Dashboard() {
             </div>
             <div>
               <p className="text-[11px] font-bold text-slate-400">Your Journey</p>
-              <p className="text-[14px] font-black text-slate-900">Level 2 — Contributor</p>
+              <p className="text-[14px] font-black text-slate-900">{userLevel.title}</p>
             </div>
           </div>
           <div className="mt-3.5">
@@ -415,8 +436,8 @@ function Dashboard() {
             {[
               { v: cases.filter((c) => c.myRole === 'CLAIMANT').length, l: 'Cases Submitted', icon: <FileText className="w-3.5 h-3.5" />, t: 'text-violet-600 bg-violet-50' },
               { v: asJuror.length, l: 'Jury Participations', icon: <Users className="w-3.5 h-3.5" />, t: 'text-blue-600 bg-blue-50' },
-              { v: 3, l: 'Helpful Votes', icon: <CheckCircle2 className="w-3.5 h-3.5" />, t: 'text-emerald-600 bg-emerald-50' },
-              { v: 2, l: 'Badges Earned', icon: <Star className="w-3.5 h-3.5" />, t: 'text-amber-600 bg-amber-50' },
+              { v: helpfulVotes, l: 'Helpful Votes', icon: <CheckCircle2 className="w-3.5 h-3.5" />, t: 'text-emerald-600 bg-emerald-50' },
+              { v: badgesEarned, l: 'Badges Earned', icon: <Star className="w-3.5 h-3.5" />, t: 'text-amber-600 bg-amber-50' },
             ].map((x) => (
               <div key={x.l} className="rounded-xl border border-slate-100 p-2 text-center">
                 <div className={`w-7 h-7 mx-auto rounded-lg flex items-center justify-center ${x.t}`}>{x.icon}</div>
@@ -471,9 +492,9 @@ function Dashboard() {
             </Link>
           </div>
           <div className="flex items-center gap-4 mt-4">
-            <Ring value={repScore} max={1000} label="Level 2" />
+            <Ring value={repScore} max={1000} label={userLevel.short} />
             <div className="min-w-0">
-              <p className="text-[13px] font-black text-slate-900">Contributor</p>
+              <p className="text-[13px] font-black text-slate-900">{userLevel.short}</p>
               <p className="text-[11px] text-slate-400 mt-1 leading-snug">Consistent participation builds a fairer community.</p>
             </div>
           </div>
@@ -481,8 +502,8 @@ function Dashboard() {
             {[
               { v: cases.filter((c) => c.myRole === 'CLAIMANT').length, l: 'Submitted', t: 'text-violet-600 bg-violet-50' },
               { v: asJuror.length, l: 'Jury', t: 'text-blue-600 bg-blue-50' },
-              { v: 3, l: 'Helpful Votes', t: 'text-rose-500 bg-rose-50' },
-              { v: 2, l: 'Badges', t: 'text-amber-600 bg-amber-50' },
+              { v: helpfulVotes, l: 'Helpful Votes', t: 'text-rose-500 bg-rose-50' },
+              { v: badgesEarned, l: 'Badges', t: 'text-amber-600 bg-amber-50' },
             ].map((x) => (
               <div key={x.l} className="rounded-xl border border-slate-100 p-2 text-center">
                 <p className={`text-[15px] font-black ${x.t.split(' ')[0]}`}>{x.v}</p>

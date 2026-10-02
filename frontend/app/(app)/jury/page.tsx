@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import {
   Users,
@@ -35,6 +35,20 @@ export default function JuryDashboard() {
   const completedCases = cases.filter((c) => c.myRole === 'JUROR' && isClosed(c));
   const completed = jurorHistory.length + completedCases.length;
   const onTime = jurorHistory.filter((h) => h.onTime).length;
+
+  const repScore = useMemo(() => {
+    if (!jurorHistory || jurorHistory.length === 0) return 500;
+    const onTimeCount = jurorHistory.filter((h) => h.onTime).length;
+    const onTimePct = Math.round((onTimeCount / jurorHistory.length) * 100);
+    return Math.min(1000, Math.max(500, 500 + Math.round(onTimePct * 5)));
+  }, [jurorHistory]);
+
+  const standing = useMemo(() => {
+    if (!jurorHistory || jurorHistory.length === 0) return 'Newcomer';
+    if (repScore >= 800) return 'Top 10%';
+    if (repScore >= 650) return 'Top 25%';
+    return 'Top 50%';
+  }, [jurorHistory, repScore]);
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode; count?: number }[] = [
     { id: 'AVAILABLE', label: 'Available for Review', icon: <Users className="w-4 h-4" />, count: pendingInvites.length },
@@ -153,6 +167,15 @@ export default function JuryDashboard() {
           {/* COMPLETED */}
           {tab === 'COMPLETED' && (
             <div className="space-y-3">
+              {completedCases.length === 0 && jurorHistory.length === 0 && (
+                <Card className="p-8 text-center">
+                  <CheckCircle2 className="w-9 h-9 text-slate-200 mx-auto" />
+                  <p className="text-sm font-bold text-slate-600 mt-3">No completed panels yet</p>
+                  <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                    Cases you deliberate on and complete will appear here along with your on-time reputation updates.
+                  </p>
+                </Card>
+              )}
               {completedCases.map((c) => (
                 <CaseRow key={c.id} caseId={c.id} title={c.title} category={c.category} status={c.status} deadline={c.caseStudy?.closedAt} summary={c.claimSummary} cta="View Outcome" muted />
               ))}
@@ -188,9 +211,9 @@ export default function JuryDashboard() {
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
                 {[
                   { icon: <FileCheck className="w-5 h-5" />, tone: 'bg-violet-100 text-violet-600', v: completed, l: 'Cases Reviewed' },
-                  { icon: <Star className="w-5 h-5" />, tone: 'bg-amber-100 text-amber-600', v: 820, l: 'Reputation Points' },
-                  { icon: <Award className="w-5 h-5" />, tone: 'bg-blue-100 text-blue-600', v: 'Top 20%', l: 'Active Jurors' },
-                  { icon: <Clock className="w-5 h-5" />, tone: 'bg-emerald-100 text-emerald-600', v: `${Math.round((onTime / Math.max(1, jurorHistory.length)) * 100)}%`, l: 'On-Time Rate' },
+                  { icon: <Star className="w-5 h-5" />, tone: 'bg-amber-100 text-amber-600', v: repScore, l: 'Reputation Points' },
+                  { icon: <Award className="w-5 h-5" />, tone: 'bg-blue-100 text-blue-600', v: standing, l: 'Active Jurors' },
+                  { icon: <Clock className="w-5 h-5" />, tone: 'bg-emerald-100 text-emerald-600', v: `${jurorHistory.length ? Math.round((onTime / jurorHistory.length) * 100) : 100}%`, l: 'On-Time Rate' },
                 ].map((x) => (
                   <Card key={x.l} className="p-4 text-center">
                     <div className={`w-10 h-10 mx-auto rounded-xl flex items-center justify-center ${x.tone}`}>{x.icon}</div>
@@ -278,8 +301,8 @@ export default function JuryDashboard() {
             <div className="grid grid-cols-3 gap-2">
               {[
                 { v: completed, l: 'Cases Reviewed' },
-                { v: 820, l: 'Reputation Points' },
-                { v: 'Top 20%', l: 'Active Jurors' },
+                { v: repScore, l: 'Reputation Points' },
+                { v: standing, l: 'Active Jurors' },
               ].map((x) => (
                 <div key={x.l} className="rounded-xl border border-slate-100 p-2.5 text-center">
                   <p className="text-[15px] font-black text-slate-900 leading-none">{x.v}</p>

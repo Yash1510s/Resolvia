@@ -6,6 +6,7 @@ import {
   AppNotification,
   CommunityPost,
   DisputeCase,
+  DisputeCategory,
   JuryAvailability,
   JuryInvitation,
   JurorHistoryItem,
@@ -19,6 +20,7 @@ import { computeSha256, computeSha256Bytes, formatHash } from './crypto';
 import { anchorEvidenceOnChain, storeEvidenceContent } from './chain';
 import { jurorPseudonym } from './jury';
 import { computeVoteChoiceCommitment, generateSalt32 } from './commitment';
+import { sampleJurorPanel } from './jurorSampling';
 
 export interface Identity {
   name: string;
@@ -100,25 +102,27 @@ const GUEST_IDENTITY: Identity = {
   sub: 'Guest',
 };
 
-const DEFAULT_PROFILE_PREFS: ProfilePrefs = {
-  headline: 'Dispute resolution advocate & community researcher',
-  interests: ['Smart contracts', 'Consumer protection', 'Escrow disputes', 'Open evidence', 'Campus governance'],
-  bio: 'I believe disputes are resolved better with transparent process than with power. I file cases, serve as a juror when invited, and write up what I learn. On Resolvia I care about evidence quality and fair procedure.',
-  location: 'Mumbai, India',
-  institution: 'University of Mumbai',
-  joinedDate: '2024-03-12',
-  email: 'alex.vance@resolvia.network',
-  notifications: { email: true, inApp: true, juryInvitations: true, caseUpdates: true, security: true, marketing: false },
-  privacy: {
-    publicProfile: true,
-    showReputation: true,
-    showHistory: true,
-    anonymizeCaseStudy: true,
-    doNotIndex: false,
-  },
-  blockchain: { showWallet: true, autoApprove: false, defaultNetwork: 'Local Testnet (Hardhat)' },
-  accessibility: { reducedMotion: false, largeText: false, highContrast: false, announcements: true },
-};
+export function buildDefaultProfilePrefs(email?: string): ProfilePrefs {
+  return {
+    headline: 'Dispute resolution advocate & community member',
+    interests: [],
+    bio: '',
+    location: '',
+    institution: '',
+    joinedDate: new Date().toISOString().split('T')[0],
+    email: email || '',
+    notifications: { email: true, inApp: true, juryInvitations: true, caseUpdates: true, security: true, marketing: false },
+    privacy: {
+      publicProfile: true,
+      showReputation: true,
+      showHistory: true,
+      anonymizeCaseStudy: true,
+      doNotIndex: false,
+    },
+    blockchain: { showWallet: true, autoApprove: false, defaultNetwork: 'EVM Testnet' },
+    accessibility: { reducedMotion: false, largeText: false, highContrast: false, announcements: true },
+  };
+}
 
 function tsNow(): string {
   return new Date().toISOString();
@@ -204,6 +208,7 @@ function rebaseline(cases: DisputeCase[], user?: any): DisputeCase[] {
 function loadSavedState(): {
   cases?: DisputeCase[];
   invitations?: JuryInvitation[];
+  jurorHistory?: JurorHistoryItem[];
   notifications?: AppNotification[];
   rslvBalance?: number;
   availability?: JuryAvailability;
@@ -220,19 +225,17 @@ function loadSavedState(): {
   }
 }
 
-const PANEL_WALLETS = ['0x2202...bb02', '0x3303...cc03', '0x4404...dd04', '0x5505...ee05', '0x6606...ff06'];
-
-/** A fresh anonymous 5-juror panel (optionally with the given wallet as juror-01). */
-function makePanel(userWallet?: string, includeUser = false): DisputeCase['jurors'] {
-  const wallets = includeUser && userWallet ? [userWallet, ...PANEL_WALLETS.slice(0, 4)] : PANEL_WALLETS;
-  return wallets.map((w, i) => ({
-    jurorId: `juror-${String(i + 1).padStart(2, '0')}`,
-    name: includeUser && i === 0 ? 'You (anonymous)' : `Juror ${String.fromCharCode(65 + i)}`,
-    walletAddress: w,
-    reputationScore: 88 + Math.floor(Math.random() * 10),
-    stakedAmount: 2000 + Math.floor(Math.random() * 5) * 200,
-    status: 'PENDING_COMMIT' as const,
-  }));
+/** A fresh anonymous 5-juror panel selected via reputation and stake-weighted random sampling. */
+function makePanel(
+  userWallet?: string,
+  includeUser = false,
+  caseId = 'case-084',
+  category: DisputeCategory = 'GENERAL_EVIDENCE',
+  claimantWallet?: string,
+  respondentWallet?: string
+): DisputeCase['jurors'] {
+  const result = sampleJurorPanel(caseId, category, claimantWallet, respondentWallet, userWallet, includeUser);
+  return result.jurors;
 }
 
 function tallyVotes(jurors: DisputeCase['jurors']) {
@@ -280,28 +283,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setNotifications([]);
     }
   }, [authUser]);
-  const [rslvBalance, setRslvBalance] = useState<number>(saved?.rslvBalance ?? 600);
+  const [rslvBalance, setRslvBalance] = useState<number>(saved?.rslvBalance ?? 100);
   const [wizardOpen, setWizardOpen] = useState<boolean>(false);
   const [availability, setAvailability] = useState<JuryAvailability>(
     saved?.availability || { inPool: true, state: 'AVAILABLE', maxConcurrent: 3 }
   );
   const [invitations, setInvitations] = useState<JuryInvitation[]>(() => {
     if (!authUser) return [];
-    const list = saved?.invitations || INITIAL_INVITATIONS;
-    const now = Date.now();
-    return list.map((i) =>
-      i.status === 'PENDING' && new Date(i.expiresAt).getTime() < now ? { ...i, expiresAt: new Date(now + DAY_MS).toISOString() } : i
-    );
+    return saved?.invitations || [];
   });
-  const [jurorHistory] = useState<JurorHistoryItem[]>(() => (!authUser ? [] : INITIAL_JUROR_HISTORY));
+  const [jurorHistory] = useState<JurorHistoryItem[]>(() => saved?.jurorHistory || []);
   const [profilePrefs, setProfilePrefsState] = useState<ProfilePrefs>(() => {
     try {
       const raw = typeof window !== 'undefined' ? window.localStorage.getItem('resolvia_profile_prefs_v1') : null;
-      if (raw) return { ...DEFAULT_PROFILE_PREFS, ...(JSON.parse(raw) as Partial<ProfilePrefs>) };
+      if (raw) return { ...buildDefaultProfilePrefs(authUser?.email), ...(JSON.parse(raw) as Partial<ProfilePrefs>) };
     } catch {
       /* ignore */
     }
-    return DEFAULT_PROFILE_PREFS;
+    return buildDefaultProfilePrefs(authUser?.email);
   });
   const setProfilePrefs = useCallback((p: ProfilePrefs) => {
     setProfilePrefsState(p);
@@ -921,12 +920,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         prev.map((c) => {
           if (c.id !== caseId) return c;
           const needsReport = !c.aiAnalysis;
-          // When the advisory is generated and no panel exists yet, select the jury.
+          // When the advisory is generated and no panel exists yet, select the jury via weighted sampling.
           const needsPanel = needsReport && c.jurors.length === 0;
-          const panel = needsPanel ? makePanel(identity.wallet, c.myRole === 'JUROR') : c.jurors;
-          const panelAudit = needsPanel
+          const sampling = needsPanel
+            ? sampleJurorPanel(c.id, c.category, c.claimant?.wallet, c.respondent?.wallet, identity.wallet, c.myRole === 'JUROR')
+            : null;
+          const panel = sampling ? sampling.jurors : c.jurors;
+          const panelAudit = sampling
             ? [
-                { eventId: 'evt-panel-' + Date.now(), eventNumber: 'EVENT PANEL', title: 'Jury panel selected via weighted PRNG', actor: 'JuryManager', actorRole: 'Smart Contract', timestamp: tsPretty(), txHash: rndTx(), blockNumber: 6286800 + Math.floor(Math.random() * 50), metadataHash: rndTx(), details: '5 anonymous jurors selected with conflict checks; invitations sent.' },
+                {
+                  eventId: 'evt-panel-' + Date.now(),
+                  eventNumber: 'EVENT PANEL',
+                  title: 'Jury panel selected via weighted PRNG',
+                  actor: 'JuryManager',
+                  actorRole: 'Smart Contract',
+                  timestamp: tsPretty(),
+                  txHash: rndTx(),
+                  blockNumber: 6286800 + Math.floor(Math.random() * 50),
+                  metadataHash: sampling.samplingLog.selectionEntropySeed,
+                  details: sampling.samplingLog.details,
+                },
               ]
             : [];
           return {

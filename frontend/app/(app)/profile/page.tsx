@@ -81,7 +81,15 @@ export default function ProfilePage() {
   const myCases = cases.filter((c) => c.myRole);
   const closed = myCases.filter((c) => isClosed(c));
   const asJuror = myCases.filter((c) => c.myRole === 'JUROR');
-  const rep = 820;
+
+  const rep = useMemo(() => {
+    if (!jurorHistory || jurorHistory.length === 0) {
+      return myCases.length > 0 ? 550 : 500;
+    }
+    const onTime = jurorHistory.filter((h) => h.onTime).length;
+    const onTimePct = Math.round((onTime / jurorHistory.length) * 100);
+    return Math.min(1000, Math.max(500, 500 + Math.round(onTimePct * 5)));
+  }, [jurorHistory, myCases]);
 
   const contributions = useMemo(() => {
     const list: { icon: React.ReactNode; tone: string; text: string; xp: number; when: string }[] = [];
@@ -91,16 +99,19 @@ export default function ProfilePage() {
     for (const h of jurorHistory) {
       list.push({ icon: <Gavel className="w-4 h-4" />, tone: 'bg-blue-100 text-blue-600', text: `Participated as juror in ${shortCaseId(h.caseId)}`, xp: h.reputationDelta, when: fmtDate(h.completedAt).split(',')[0] });
     }
-    list.push({ icon: <ThumbsUp className="w-4 h-4" />, tone: 'bg-emerald-100 text-emerald-600', text: 'Helpful comment in a closed case discussion', xp: 15, when: '3 days ago' });
-    list.push({ icon: <FileCheck className="w-4 h-4" />, tone: 'bg-emerald-100 text-emerald-600', text: 'Evidence verified by another juror', xp: 25, when: '5 days ago' });
     return list.slice(0, 6);
   }, [myCases, jurorHistory]);
 
+  const hasActiveJuror = asJuror.length > 0 || jurorHistory.length > 0;
+  const hasFiledCase = myCases.some((c) => c.myRole === 'CLAIMANT');
+  const isVerified = Boolean(authUser?.wallet || authUser?.email);
+  const isTopTier = rep >= 800;
+
   const badges = [
-    { name: 'Active Juror', tone: 'from-violet-500 to-indigo-500', icon: <Shield className="w-5 h-5" /> },
-    { name: 'Helpful Member', tone: 'from-orange-400 to-amber-500', icon: <MessageSquare className="w-5 h-5" /> },
-    { name: 'Verified Contributor', tone: 'from-emerald-400 to-teal-500', icon: <Check className="w-5 h-5" /> },
-    { name: 'Top 20%', tone: 'from-amber-400 to-orange-500', icon: <Award className="w-5 h-5" /> },
+    { name: 'Active Juror', tone: 'from-violet-500 to-indigo-500', icon: <Shield className="w-5 h-5" />, unlocked: hasActiveJuror, req: 'Participate in at least 1 jury' },
+    { name: 'Case Initiator', tone: 'from-orange-400 to-amber-500', icon: <FileText className="w-5 h-5" />, unlocked: hasFiledCase, req: 'File a dispute resolution case' },
+    { name: 'Verified Member', tone: 'from-emerald-400 to-teal-500', icon: <Check className="w-5 h-5" />, unlocked: isVerified, req: 'Verify email or Web3 wallet' },
+    { name: 'Top Tier Juror', tone: 'from-amber-400 to-orange-500', icon: <Award className="w-5 h-5" />, unlocked: isTopTier, req: 'Reach 800+ reputation points' },
   ];
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
@@ -320,8 +331,8 @@ export default function ProfilePage() {
                       <p className="text-[11px] font-semibold text-slate-400 mt-1">Reputation Score</p>
                     </div>
                     <div className="ml-auto text-right">
-                      <p className="text-[15px] font-black text-emerald-600">↑ +120</p>
-                      <p className="text-[10px] text-slate-400">(Last 30 days)</p>
+                      <p className="text-[15px] font-black text-emerald-600">{jurorHistory.length ? '↑ +' + jurorHistory.reduce((s, h) => s + h.reputationDelta, 0) : 'Baseline'}</p>
+                      <p className="text-[10px] text-slate-400">{jurorHistory.length ? '(All-time delta)' : 'Novice Tier'}</p>
                     </div>
                   </div>
                   <div className="mt-4">
@@ -329,7 +340,7 @@ export default function ProfilePage() {
                       <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500" style={{ width: `${(rep / 1000) * 100}%` }} />
                     </div>
                     <div className="flex items-center justify-between mt-1.5">
-                      <span className="text-[10.5px] font-bold text-slate-500">Top 20% of users</span>
+                      <span className="text-[10.5px] font-bold text-slate-500">{rep >= 800 ? 'Top 20% of users' : rep > 500 ? 'Active Contributor' : 'Novice Member'}</span>
                       <span className="text-[10.5px] font-bold text-slate-400">{rep} / 1000</span>
                     </div>
                   </div>
@@ -340,14 +351,14 @@ export default function ProfilePage() {
                       <span className="w-7 h-7 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center"><TrendingUp className="w-4 h-4" /></span>
                       Activity Stats
                     </h3>
-                    <span className="text-[10.5px] font-bold text-slate-400">Last 6 Months</span>
+                    <span className="text-[10.5px] font-bold text-slate-400">Account Lifetime</span>
                   </div>
                   <div className="grid grid-cols-4 gap-2.5">
                     {[
                       { v: myCases.filter((c) => c.myRole === 'CLAIMANT').length, l: 'Cases Created', icon: <FileText className="w-4 h-4" /> },
                       { v: asJuror.length, l: 'As a Juror', icon: <Gavel className="w-4 h-4" /> },
-                      { v: 18, l: 'Helpful Answers', icon: <MessageSquare className="w-4 h-4" /> },
-                      { v: 7, l: 'Case Studies Read', icon: <BookOpen className="w-4 h-4" /> },
+                      { v: 0, l: 'Helpful Answers', icon: <MessageSquare className="w-4 h-4" /> },
+                      { v: cases.filter((c) => isClosed(c)).length > 0 ? 1 : 0, l: 'Case Studies Read', icon: <BookOpen className="w-4 h-4" /> },
                     ].map((s) => (
                       <div key={s.l} className="rounded-xl border border-slate-100 p-3 text-center">
                         <div className="w-8 h-8 mx-auto rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center">{s.icon}</div>
@@ -402,6 +413,9 @@ export default function ProfilePage() {
                         <span className="text-[10px] text-slate-400 shrink-0 w-20 text-right">{x.when}</span>
                       </div>
                     ))}
+                    {contributions.length === 0 && (
+                      <p className="text-[12px] text-slate-400 py-4 text-center">No contributions yet.</p>
+                    )}
                   </div>
                 </Card>
               </div>
@@ -412,21 +426,28 @@ export default function ProfilePage() {
           {tab === 'activity' && (
             <Card className="p-5">
               <h3 className="text-[14px] font-black text-slate-900 mb-4">Activity Timeline</h3>
-              <ol className="relative border-l-2 border-slate-100 ml-2.5 space-y-5">
-                {[
-                  ...myCases.map((c) => ({ t: fmtDate(c.createdAt, true), text: `Filed / joined case ${shortCaseId(c.id)} · ${c.title}`, icon: <FileText className="w-3.5 h-3.5" /> })),
-                  ...jurorHistory.map((h) => ({ t: fmtDate(h.completedAt, true), text: `Served as juror in ${shortCaseId(h.caseId)} — voted ${h.voteChoice.replace(/_/g, ' ')}`, icon: <Gavel className="w-3.5 h-3.5" /> })),
-                ]
-                  .sort((a, b) => new Date(b.t).getTime() - new Date(a.t).getTime())
-                  .slice(0, 8)
-                  .map((x, i) => (
-                    <li key={i} className="relative pl-6">
-                      <span className="absolute -left-[11px] top-0 w-5 h-5 rounded-full bg-white border-2 border-violet-500 flex items-center justify-center text-violet-600">{x.icon}</span>
-                      <p className="text-[10.5px] font-bold text-slate-400">{x.t}</p>
-                      <p className="text-[12.5px] font-semibold text-slate-700 mt-0.5">{x.text}</p>
-                    </li>
-                  ))}
-              </ol>
+              {myCases.length === 0 && jurorHistory.length === 0 ? (
+                <div className="py-8 text-center text-slate-400">
+                  <p className="text-[13px] font-medium text-slate-600">No activity recorded yet</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Your timeline will track dispute filings, evidence submissions, and jury decisions.</p>
+                </div>
+              ) : (
+                <ol className="relative border-l-2 border-slate-100 ml-2.5 space-y-5">
+                  {[
+                    ...myCases.map((c) => ({ t: fmtDate(c.createdAt, true), text: `Filed / joined case ${shortCaseId(c.id)} · ${c.title}`, icon: <FileText className="w-3.5 h-3.5" /> })),
+                    ...jurorHistory.map((h) => ({ t: fmtDate(h.completedAt, true), text: `Served as juror in ${shortCaseId(h.caseId)} — voted ${h.voteChoice.replace(/_/g, ' ')}`, icon: <Gavel className="w-3.5 h-3.5" /> })),
+                  ]
+                    .sort((a, b) => new Date(b.t).getTime() - new Date(a.t).getTime())
+                    .slice(0, 8)
+                    .map((x, i) => (
+                      <li key={i} className="relative pl-6">
+                        <span className="absolute -left-[11px] top-0 w-5 h-5 rounded-full bg-white border-2 border-violet-500 flex items-center justify-center text-violet-600">{x.icon}</span>
+                        <p className="text-[10.5px] font-bold text-slate-400">{x.t}</p>
+                        <p className="text-[12.5px] font-semibold text-slate-700 mt-0.5">{x.text}</p>
+                      </li>
+                    ))}
+                </ol>
+              )}
             </Card>
           )}
 
@@ -464,6 +485,9 @@ export default function ProfilePage() {
                     <span className="text-[10.5px] text-slate-400 w-20 text-right">{x.when}</span>
                   </div>
                 ))}
+                {contributions.length === 0 && (
+                  <p className="text-[12px] text-slate-400 py-8 text-center">No contributions recorded yet. As you participate in cases, your verified XP history will appear here.</p>
+                )}
               </div>
             </Card>
           )}
@@ -474,24 +498,28 @@ export default function ProfilePage() {
               <h3 className="text-[14px] font-black text-slate-900 mb-4">Badges &amp; Achievements</h3>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
                 {badges.map((b) => (
-                  <div key={b.name} className="p-4 rounded-2xl border border-slate-100 text-center">
-                    <div className={`w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr ${b.tone} text-white flex items-center justify-center shadow-md`}>{b.icon}</div>
+                  <div key={b.name} className={`p-4 rounded-2xl border text-center ${b.unlocked ? 'border-slate-100 bg-white' : 'border-dashed border-slate-200 opacity-60 bg-slate-50/50'}`}>
+                    <div className={`w-14 h-14 mx-auto rounded-2xl flex items-center justify-center shadow-sm ${b.unlocked ? `bg-gradient-to-tr ${b.tone} text-white` : 'bg-slate-200 text-slate-400'}`}>
+                      {b.icon}
+                    </div>
                     <p className="text-[12px] font-black text-slate-800 mt-3">{b.name}</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">Earned this quarter</p>
+                    <p className={`text-[10px] mt-0.5 font-bold ${b.unlocked ? 'text-emerald-600' : 'text-slate-400'}`}>
+                      {b.unlocked ? 'Unlocked' : b.req}
+                    </p>
                   </div>
                 ))}
                 {[
-                  { name: 'First Verdict', d: 'Cast your first blind vote', got: true },
-                  { name: 'Diligent Reviewer', d: 'Reviewed 10 cases on time', got: true },
-                  { name: 'Bridge Builder', d: 'Helpful in 5 discussions', got: false },
-                  { name: 'Long Service', d: 'Active for 6 months', got: false },
+                  { name: 'First Verdict', d: 'Cast your first blind vote', got: jurorHistory.length >= 1 },
+                  { name: 'Diligent Reviewer', d: 'Reviewed 10 cases on time', got: jurorHistory.filter((h) => h.onTime).length >= 10 },
+                  { name: 'Bridge Builder', d: 'Participate in 5 case deliberations', got: false },
+                  { name: 'Pioneer Member', d: 'Early platform participant', got: isVerified },
                 ].map((b) => (
                   <div key={b.name} className={`p-4 rounded-2xl border text-center ${b.got ? 'border-slate-100' : 'border-dashed border-slate-200 opacity-50'}`}>
                     <div className={`w-14 h-14 mx-auto rounded-2xl flex items-center justify-center ${b.got ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-300'}`}>
                       <Sparkles className="w-6 h-6" />
                     </div>
                     <p className="text-[12px] font-black text-slate-800 mt-3">{b.name}</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">{b.d}</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">{b.got ? 'Unlocked' : b.d}</p>
                   </div>
                 ))}
               </div>
@@ -513,8 +541,8 @@ export default function ProfilePage() {
                 <div className="grid sm:grid-cols-2 gap-2 text-[12px]">
                   <p><span className="text-slate-400 font-semibold">Auth / Email:</span> <span className="font-semibold text-slate-700">{profilePrefs.email?.endsWith('@wallet.resolvia.eth') ? 'Web3 Connected (MetaMask)' : profilePrefs.email}</span></p>
                   <p><span className="text-slate-400 font-semibold">Joined:</span> <span className="font-semibold text-slate-700">{fmtDate(profilePrefs.joinedDate)}</span></p>
-                  <p><span className="text-slate-400 font-semibold">Institution:</span> <span className="font-semibold text-slate-700">{profilePrefs.institution}</span></p>
-                  <p><span className="text-slate-400 font-semibold">Location:</span> <span className="font-semibold text-slate-700">{profilePrefs.location}</span></p>
+                  <p><span className="text-slate-400 font-semibold">Institution:</span> <span className="font-semibold text-slate-700">{profilePrefs.institution || 'Not specified'}</span></p>
+                  <p><span className="text-slate-400 font-semibold">Location:</span> <span className="font-semibold text-slate-700">{profilePrefs.location || 'Not specified'}</span></p>
                 </div>
               </div>
             </Card>
@@ -525,7 +553,7 @@ export default function ProfilePage() {
         <div className="space-y-4">
           <div className="p-5 rounded-2xl bg-violet-50 border border-violet-100">
             <p className="italic text-[12.5px] text-slate-600 leading-relaxed">"Knowledge, empathy, and evidence can solve even the toughest disputes."</p>
-            <p className="text-[10.5px] text-slate-400 mt-2">— {displayName}</p>
+            <p className="text-[10.5px] text-slate-400 mt-2">— Resolvia Community</p>
           </div>
 
           <Card className="p-5">
@@ -536,7 +564,9 @@ export default function ProfilePage() {
             <div className="grid grid-cols-4 gap-2.5">
               {badges.map((b) => (
                 <div key={b.name} className="text-center">
-                  <div className={`w-12 h-12 mx-auto rounded-xl bg-gradient-to-tr ${b.tone} text-white flex items-center justify-center shadow-sm`}>{b.icon}</div>
+                  <div className={`w-12 h-12 mx-auto rounded-xl flex items-center justify-center shadow-sm ${b.unlocked ? `bg-gradient-to-tr ${b.tone} text-white` : 'bg-slate-100 text-slate-400'}`}>
+                    {b.icon}
+                  </div>
                   <p className="text-[9px] font-bold text-slate-500 mt-1.5 leading-tight">{b.name}</p>
                 </div>
               ))}
@@ -548,11 +578,15 @@ export default function ProfilePage() {
               <h3 className="text-[14px] font-black text-slate-900">Interests</h3>
               <button onClick={() => setTab('settings')} className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700"><Pencil className="w-3 h-3" /> Edit</button>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {profilePrefs.interests.map((i) => (
-                <span key={i} className="px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-[11px] font-bold text-slate-600">{i}</span>
-              ))}
-            </div>
+            {profilePrefs.interests.length === 0 ? (
+              <p className="text-[11.5px] text-slate-400 py-1">No domains selected yet. Click Edit to add your expertise.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {profilePrefs.interests.map((i) => (
+                  <span key={i} className="px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-[11px] font-bold text-slate-600">{i}</span>
+                ))}
+              </div>
+            )}
           </Card>
 
           <Card className="p-5">
@@ -562,12 +596,10 @@ export default function ProfilePage() {
             </div>
             <div className="space-y-3">
               {[
-                { icon: <Mail className="w-4 h-4" />, v: profilePrefs.email?.endsWith('@wallet.resolvia.eth') ? 'Web3 Connected (MetaMask)' : profilePrefs.email },
-                { icon: <GraduationCap className="w-4 h-4" />, v: profilePrefs.institution },
-                { icon: <MapPin className="w-4 h-4" />, v: profilePrefs.location },
-                { icon: <Calendar className="w-4 h-4" />, v: `Joined on ${fmtDate(profilePrefs.joinedDate)}` },
-                { icon: <Link2 className="w-4 h-4" />, v: 'linkedin.com/in/resolvia-user' },
-                { icon: <Link2 className="w-4 h-4" />, v: 'github.com/resolvia-user' },
+                { icon: <Mail className="w-4 h-4" />, v: profilePrefs.email?.endsWith('@wallet.resolvia.eth') ? 'Web3 Connected (MetaMask)' : (profilePrefs.email || 'No email registered') },
+                { icon: <GraduationCap className="w-4 h-4" />, v: profilePrefs.institution || 'Institution: Not specified' },
+                { icon: <MapPin className="w-4 h-4" />, v: profilePrefs.location || 'Location: Not specified' },
+                { icon: <Calendar className="w-4 h-4" />, v: `Member since ${fmtDate(profilePrefs.joinedDate).split(',')[0]}` },
               ].map((x, i) => (
                 <div key={i} className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">{x.icon}</div>
