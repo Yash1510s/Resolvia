@@ -204,6 +204,7 @@ export interface DisputeCase {
     name: string;
     wallet: string;
     email?: string;
+    phone?: string;
     stake: number;
   };
   respondent: {
@@ -211,6 +212,7 @@ export interface DisputeCase {
     name: string;
     wallet: string;
     email?: string;
+    phone?: string;
     contact?: string;
     stake: number;
     responded: boolean;
@@ -307,6 +309,7 @@ export interface ProfilePrefs {
   joinedDate: string;
   notifications: {
     email: boolean;
+    sms?: boolean;
     inApp: boolean;
     juryInvitations: boolean;
     caseUpdates: boolean;

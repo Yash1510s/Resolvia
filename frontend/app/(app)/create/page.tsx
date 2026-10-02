@@ -28,6 +28,7 @@ import { DisputeCase, DisputeCategory, EvidenceItem } from '../../types';
 import { computeSha256, computeSha256Bytes, formatHash, arrayBufferToBase64 } from '../../lib/crypto';
 import { anchorEvidenceOnChain, storeEvidenceContent, initiateDisputeOnChain } from '../../lib/chain';
 import { useApp } from '../../lib/app-context';
+import { useAuth } from '../../lib/auth-context';
 import { Card, Chip, BtnPrimary, categoryLabel } from '../../components/ui';
 
 const DRAFT_KEY = 'resolvia_case_draft_v2';
@@ -108,6 +109,7 @@ const SUBMIT_PHASES = [
 
 export default function CreateCasePage() {
   const { createCase, recordAnchors, identity } = useApp();
+  const { user: authUser } = useAuth();
 
   const [draft] = useState<DraftState | null>(() => loadDraft());
   const [step, setStep] = useState<number>(() => {
@@ -300,13 +302,15 @@ export default function CreateCasePage() {
       claimant: {
         name: claimantName.replace(' (You)', ''),
         wallet: identity.wallet,
-        email: identity.email || undefined,
+        email: authUser?.email || identity.email || undefined,
+        phone: authUser?.phone || (typeof window !== 'undefined' ? localStorage.getItem('resolvia_user_phone') || undefined : undefined),
         stake: 250,
       },
       respondent: {
         name: respondentName,
         contact: respondentContact.trim(),
         email: respondentContact.includes('@') ? respondentContact.trim() : undefined,
+        phone: !respondentContact.includes('@') && !respondentContact.startsWith('0x') && respondentContact.replace(/\D/g, '').length >= 7 ? respondentContact.trim() : undefined,
         wallet: respondentContact.trim().startsWith('0x') ? respondentContact.trim() : (respondentContact.trim() || '0x2281…99aa'),
         stake: 0,
         responded: false,

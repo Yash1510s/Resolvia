@@ -111,7 +111,7 @@ export function buildDefaultProfilePrefs(email?: string): ProfilePrefs {
     institution: '',
     joinedDate: new Date().toISOString().split('T')[0],
     email: email || '',
-    notifications: { email: true, inApp: true, juryInvitations: true, caseUpdates: true, security: true, marketing: false },
+    notifications: { email: true, sms: true, inApp: true, juryInvitations: true, caseUpdates: true, security: true, marketing: false },
     privacy: {
       publicProfile: true,
       showReputation: true,
@@ -296,12 +296,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [profilePrefs, setProfilePrefsState] = useState<ProfilePrefs>(() => {
     try {
       const raw = typeof window !== 'undefined' ? window.localStorage.getItem('resolvia_profile_prefs_v1') : null;
-      if (raw) return { ...buildDefaultProfilePrefs(authUser?.email), ...(JSON.parse(raw) as Partial<ProfilePrefs>) };
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<ProfilePrefs>;
+        if (parsed.email === 'alex.vance@resolvia.network' || (authUser?.email && parsed.email !== authUser.email)) {
+          parsed.email = authUser?.email || '';
+        }
+        return { ...buildDefaultProfilePrefs(authUser?.email), ...parsed, email: authUser?.email || parsed.email || '' };
+      }
     } catch {
       /* ignore */
     }
     return buildDefaultProfilePrefs(authUser?.email);
   });
+
+  // Always keep profilePrefs.email synchronized with authenticated session
+  useEffect(() => {
+    if (authUser?.email && profilePrefs.email !== authUser.email) {
+      setProfilePrefsState((prev) => {
+        const next = { ...prev, email: authUser.email };
+        try {
+          if (typeof window !== 'undefined') window.localStorage.setItem('resolvia_profile_prefs_v1', JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    }
+  }, [authUser?.email, profilePrefs.email]);
+
   const setProfilePrefs = useCallback((p: ProfilePrefs) => {
     setProfilePrefsState(p);
     try {

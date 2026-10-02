@@ -49,9 +49,21 @@ export default function SettingsPage() {
   const { profilePrefs, setProfilePrefs, availability, setAvailability, resetDemoData, cases, logout } = useApp();
   const { user: authUser, updateProfile, linkWallet, unlinkWallet } = useAuth();
   const [section, setSection] = useState<Section>('account');
-  const [account, setAccount] = useState<{ name: string; email: string; institution: string; location: string; role: import('../../types').RoleType; bio: string }>({
+  const initialEmail = authUser?.email || (profilePrefs.email === 'alex.vance@resolvia.network' ? '' : profilePrefs.email) || '';
+  const initialPhone = authUser?.phone || (typeof window !== 'undefined' ? localStorage.getItem('resolvia_user_phone') : null) || '';
+
+  const [account, setAccount] = useState<{
+    name: string;
+    email: string;
+    phone: string;
+    institution: string;
+    location: string;
+    role: import('../../types').RoleType;
+    bio: string;
+  }>({
     name: authUser?.name || (typeof window !== 'undefined' ? localStorage.getItem('resolvia_user_name') : null) || 'Community Member',
-    email: profilePrefs.email,
+    email: initialEmail,
+    phone: initialPhone,
     institution: profilePrefs.institution,
     location: profilePrefs.location,
     role: profilePrefs.roleType || 'STUDENT',
@@ -102,10 +114,15 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    if (authUser?.name) {
-      setAccount((prev) => ({ ...prev, name: authUser.name }));
+    if (authUser) {
+      setAccount((prev) => ({
+        ...prev,
+        name: authUser.name || prev.name,
+        email: authUser.email || (prev.email === 'alex.vance@resolvia.network' ? '' : prev.email),
+        phone: authUser.phone || prev.phone,
+      }));
     }
-  }, [authUser?.name]);
+  }, [authUser]);
   const [savedFlash, setSavedFlash] = useState(false);
   const { theme, setTheme } = useTheme();
   const [language, setLanguage] = useState('English (Default)');
@@ -161,10 +178,15 @@ export default function SettingsPage() {
 
   const saveAccount = async () => {
     const trimmed = account.name.trim();
-    if (trimmed && updateProfile) {
-      await updateProfile({ name: trimmed });
+    const phoneTrimmed = account.phone.trim();
+    if (updateProfile) {
+      await updateProfile({
+        name: trimmed || undefined,
+        phone: phoneTrimmed || undefined,
+      });
       if (typeof window !== 'undefined') {
-        localStorage.setItem('resolvia_user_name', trimmed);
+        if (trimmed) localStorage.setItem('resolvia_user_name', trimmed);
+        localStorage.setItem('resolvia_user_phone', phoneTrimmed);
       }
     }
     setProfilePrefs({
@@ -270,6 +292,22 @@ export default function SettingsPage() {
                           <option value="INDIVIDUAL">Individual</option>
                         </select>
                       </Field>
+                      <Field label="Email Address">
+                        <input
+                          value={authUser?.email || account.email}
+                          disabled
+                          placeholder="Your verified email address"
+                          className={`${IN} opacity-80 cursor-not-allowed bg-slate-50 dark:bg-slate-900/50`}
+                        />
+                      </Field>
+                      <Field label="Mobile Number (for SMS & OTP Notifications)">
+                        <input
+                          value={account.phone}
+                          onChange={(e) => setAccount({ ...account, phone: e.target.value })}
+                          placeholder="e.g. +91 98765 43210"
+                          className={IN}
+                        />
+                      </Field>
                       <Field label="Institution"><input value={account.institution} onChange={(e) => setAccount({ ...account, institution: e.target.value })} placeholder="e.g. University of Mumbai" className={IN} /></Field>
                       <Field label="Location"><input value={account.location} onChange={(e) => setAccount({ ...account, location: e.target.value })} placeholder="e.g. Mumbai, India" className={IN} /></Field>
                     </div>
@@ -311,32 +349,41 @@ export default function SettingsPage() {
                     </div>
                   </div>
                   <div className="mt-3 space-y-3">
-                    {[
-                      {
-                        icon: <Mail className="w-4 h-4" />,
-                        t: account.email?.endsWith('@wallet.resolvia.eth') ? 'Web3 Identity' : 'Email Verified',
-                        s: account.email?.endsWith('@wallet.resolvia.eth') ? 'Web3 Authenticated (MetaMask)' : account.email,
-                      },
-                      { icon: <GraduationCap className="w-4 h-4" />, t: 'Institution', s: account.institution },
-                      {
-                        icon: <KeyRound className="w-4 h-4" />,
-                        t: 'Sign-in method',
-                        s: authUser
-                          ? authUser.provider === 'wallet' || authUser.email?.endsWith('@wallet.resolvia.eth')
-                            ? 'Web3 Signature (MetaMask)'
-                            : `OAuth / OTP (${authUser.provider})`
-                          : 'Email OTP (Verified)',
-                      },
-                    ].map((x, i) => (
-                      <div key={i} className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">{x.icon}</div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[12px] font-bold text-slate-900 dark:text-white">{x.t}</p>
-                          <p className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400 truncate">{x.s}</p>
+                    {(() => {
+                      const displayEmail = authUser?.email || (account.email && account.email !== 'alex.vance@resolvia.network' ? account.email : 'user@example.com');
+                      const items = [
+                        {
+                          icon: <Mail className="w-4 h-4" />,
+                          t: displayEmail.endsWith('@wallet.resolvia.eth') ? 'Web3 Identity' : 'Email Verified',
+                          s: displayEmail.endsWith('@wallet.resolvia.eth') ? 'Web3 Authenticated (MetaMask)' : displayEmail,
+                        },
+                        ...(account.phone ? [{
+                          icon: <Smartphone className="w-4 h-4" />,
+                          t: 'Mobile Verified',
+                          s: account.phone,
+                        }] : []),
+                        { icon: <GraduationCap className="w-4 h-4" />, t: 'Institution', s: account.institution || 'Individual Arbitrator' },
+                        {
+                          icon: <KeyRound className="w-4 h-4" />,
+                          t: 'Sign-in method',
+                          s: authUser
+                            ? authUser.provider === 'wallet' || authUser.email?.endsWith('@wallet.resolvia.eth')
+                              ? 'Web3 Signature (MetaMask)'
+                              : `OAuth / OTP (${authUser.provider})`
+                            : 'Email OTP (Verified)',
+                        },
+                      ];
+                      return items.map((x, i) => (
+                        <div key={i} className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">{x.icon}</div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[12px] font-bold text-slate-900 dark:text-white">{x.t}</p>
+                            <p className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400 truncate">{x.s}</p>
+                          </div>
+                          <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
                         </div>
-                        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                      </div>
-                    ))}
+                      ));
+                    })()}
                   </div>
                 </Card>
               </div>
@@ -422,16 +469,74 @@ export default function SettingsPage() {
 
           {/* ── Notifications ─ */}
           {section === 'notifications' && (
-            <Card className="p-5 max-w-2xl">
-              <h2 className="text-[15px] font-black text-slate-900 dark:text-white mb-1">Notification Preferences</h2>
-              <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 mb-4">Choose what you want to be notified about.</p>
-              <ToggleRow label="Case Updates" sub="Status changes, new evidence, verdicts" on={profilePrefs.notifications.caseUpdates} onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, caseUpdates: v } })} />
-              <ToggleRow label="Jury Invitations" sub="Invitations and jury related updates" on={profilePrefs.notifications.juryInvitations} onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, juryInvitations: v } })} />
-              <ToggleRow label="Messages" sub="New discussion activity on your closed cases" on={profilePrefs.notifications.inApp} onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, inApp: v } })} />
-              <ToggleRow label="Security Alerts" sub="New logins, 2FA events, wallet changes" on={profilePrefs.notifications.security} onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, security: v } })} />
-              <ToggleRow label="Platform Announcements" sub="Important news and feature updates" on={profilePrefs.notifications.email} onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, email: v } })} />
-              <ToggleRow label="Product Newsletters" sub="Optional — tips, new case studies, community highlights" on={profilePrefs.notifications.marketing} onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, marketing: v } })} />
-            </Card>
+            <div className="space-y-4 max-w-2xl">
+              {/* Delivery Channels */}
+              <Card className="p-5">
+                <h2 className="text-[15px] font-black text-slate-900 dark:text-white mb-1">Delivery Channels</h2>
+                <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 mb-4">Select where dispute alerts, OTPs, and jury invitations get delivered.</p>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-4 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-violet-100 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
+                        <Mail className="w-4.5 h-4.5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-[13px] font-bold text-slate-900 dark:text-white">Email Dispatch</p>
+                          <span className="text-[9.5px] font-black px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">CONNECTED</span>
+                        </div>
+                        <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">
+                          {authUser?.email || account.email || 'No email configured'}
+                        </p>
+                      </div>
+                    </div>
+                    <Toggle
+                      on={profilePrefs.notifications.email}
+                      onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, email: v } })}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                        <Smartphone className="w-4.5 h-4.5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-[13px] font-bold text-slate-900 dark:text-white">SMS / Mobile Dispatch</p>
+                          {account.phone ? (
+                            <span className="text-[9.5px] font-black px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">ACTIVE</span>
+                          ) : (
+                            <span className="text-[9.5px] font-black px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">ADD IN PROFILE</span>
+                          )}
+                        </div>
+                        <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">
+                          {account.phone ? `Instant SMS to ${account.phone}` : 'Add mobile number in Profile Information for instant SMS alerts'}
+                        </p>
+                      </div>
+                    </div>
+                    <Toggle
+                      on={profilePrefs.notifications.sms ?? true}
+                      onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, sms: v } })}
+                      disabled={!account.phone}
+                    />
+                  </div>
+                </div>
+              </Card>
+
+              {/* Notification Topics */}
+              <Card className="p-5">
+                <h2 className="text-[15px] font-black text-slate-900 dark:text-white mb-1">Notification Topics</h2>
+                <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 mb-4">Choose what you want to be notified about.</p>
+                <ToggleRow label="Case Updates" sub="Status changes, new evidence, and verdicts" on={profilePrefs.notifications.caseUpdates} onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, caseUpdates: v } })} />
+                <ToggleRow label="Jury Invitations" sub="Random pool invitations, voting deadlines, and juror summons" on={profilePrefs.notifications.juryInvitations} onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, juryInvitations: v } })} />
+                <ToggleRow label="Discussion & Messages" sub="New discussion activity on your disputes and arbitrations" on={profilePrefs.notifications.inApp} onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, inApp: v } })} />
+                <ToggleRow label="Security & Access Alerts" sub="OTP requests, new logins, 2FA events, wallet changes" on={profilePrefs.notifications.security} onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, security: v } })} />
+                <ToggleRow label="Platform Announcements" sub="Important protocol updates and legal frameworks" on={profilePrefs.notifications.email} onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, email: v } })} />
+                <ToggleRow label="Product & Case Digest" sub="Optional — weekly summaries and dispute resolution insights" on={profilePrefs.notifications.marketing} onChange={(v) => setProfilePrefs({ ...profilePrefs, notifications: { ...profilePrefs.notifications, marketing: v } })} />
+              </Card>
+            </div>
           )}
 
           {/* ── Jury Availability ── */}
