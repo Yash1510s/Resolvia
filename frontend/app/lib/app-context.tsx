@@ -93,6 +93,13 @@ const DEMO_IDENTITY: Identity = {
   sub: '0xf39F…b92266',
 };
 
+const GUEST_IDENTITY: Identity = {
+  name: 'Guest User',
+  wallet: '',
+  provider: 'demo',
+  sub: 'Guest',
+};
+
 const DEFAULT_PROFILE_PREFS: ProfilePrefs = {
   headline: 'Dispute resolution advocate & community researcher',
   interests: ['Smart contracts', 'Consumer protection', 'Escrow disputes', 'Open evidence', 'Campus governance'],
@@ -148,7 +155,7 @@ function rebaseline(cases: DisputeCase[], user?: any): DisputeCase[] {
     : null;
 
   return cases.map((c) => {
-    let myRole = c.myRole;
+    let myRole: MyCaseRole | undefined = undefined;
     if (normalizedWallet || normalizedEmail || normalizedName) {
       const cClaimantWallet = c.claimant?.wallet?.toLowerCase()?.trim();
       const cClaimantEmail = (c.claimant?.email || (cClaimantWallet?.includes('@') ? cClaimantWallet : ''))?.toLowerCase()?.trim();
@@ -180,8 +187,6 @@ function rebaseline(cases: DisputeCase[], user?: any): DisputeCase[] {
         myRole = 'RESPONDENT';
       } else if (isJuror) {
         myRole = 'JUROR';
-      } else {
-        myRole = undefined;
       }
     }
     let next: DisputeCase = { ...c, myRole };
@@ -270,6 +275,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setIsLoggedIn(!!authUser);
+    if (!authUser) {
+      setInvitations([]);
+      setNotifications([]);
+    }
   }, [authUser]);
   const [rslvBalance, setRslvBalance] = useState<number>(saved?.rslvBalance ?? 600);
   const [wizardOpen, setWizardOpen] = useState<boolean>(false);
@@ -277,13 +286,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     saved?.availability || { inPool: true, state: 'AVAILABLE', maxConcurrent: 3 }
   );
   const [invitations, setInvitations] = useState<JuryInvitation[]>(() => {
+    if (!authUser) return [];
     const list = saved?.invitations || INITIAL_INVITATIONS;
     const now = Date.now();
     return list.map((i) =>
       i.status === 'PENDING' && new Date(i.expiresAt).getTime() < now ? { ...i, expiresAt: new Date(now + DAY_MS).toISOString() } : i
     );
   });
-  const [jurorHistory] = useState<JurorHistoryItem[]>(INITIAL_JUROR_HISTORY);
+  const [jurorHistory] = useState<JurorHistoryItem[]>(() => (!authUser ? [] : INITIAL_JUROR_HISTORY));
   const [profilePrefs, setProfilePrefsState] = useState<ProfilePrefs>(() => {
     try {
       const raw = typeof window !== 'undefined' ? window.localStorage.getItem('resolvia_profile_prefs_v1') : null;
@@ -302,15 +312,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const [notifications, setNotifications] = useState<AppNotification[]>(
-    saved?.notifications || [
-      { id: 'n-1', kind: 'JURY_INVITATION', title: 'Jury invitation — RSLV-2026-102', body: 'You were selected for a BUSINESS_PEER freight dispute. Accept within 48h. Minimal details shown until you accept.', caseId: 'case-102', createdAt: daysAgo(1), read: false, link: '/jury/case-102' },
-      { id: 'n-2', kind: 'COMMIT_DEADLINE', title: 'Commit deadline approaching — RSLV-2026-084', body: 'Your blind vote commitment is due within 24h. Independent review recommended before committing.', caseId: 'case-084', createdAt: daysAgo(1), read: false, link: '/cases/case-084?section=voting' },
-      { id: 'n-3', kind: 'RESPONSE_RECEIVED', title: 'Respondent notified — RSLV-2026-092', body: 'Your case was acknowledged by the respondent; counter-stake locked.', caseId: 'case-092', createdAt: daysAgo(2), read: true, link: '/cases/case-092' },
-      { id: 'n-4', kind: 'APPEAL_WINDOW', title: 'Appeal window open — RSLV-2026-071', body: 'You may file an appeal within the next 48 hours. Appeals are heard by a fresh 7-juror panel.', caseId: 'case-071', createdAt: daysAgo(8), read: true, link: '/cases/case-071?section=appeal' },
-      { id: 'n-5', kind: 'CASE_STUDY', title: 'Case study published — RSLV-2026-059', body: 'A closed case is now available as an anonymised public case study with community discussion.', caseId: 'case-059', createdAt: '2026-07-30T14:00:00Z', read: true, link: '/case-studies/case-059' },
-    ]
-  );
+  const [notifications, setNotifications] = useState<AppNotification[]>(() => {
+    if (!authUser) return [];
+    return saved?.notifications || [];
+  });
 
   // Debounced snapshot of demo state (survives reloads / trips to the public site).
   useEffect(() => {
@@ -518,7 +523,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         sub: authUser.wallet ? `${authUser.wallet.slice(0, 6)}…${authUser.wallet.slice(-4)}` : (authUser.email || 'user'),
       };
     }
-    return DEMO_IDENTITY;
+    return GUEST_IDENTITY;
   }, [authUser]);
 
   const myJurorPseudonym = useMemo(() => jurorPseudonym(identity.wallet), [identity.wallet]);

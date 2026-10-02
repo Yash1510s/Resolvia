@@ -38,9 +38,15 @@ export default function DashboardRoute() {
 
 function Dashboard() {
   const { cases, identity, invitations, login, myJurorPseudonym, jurorHistory } = useApp();
-  const { user: authUser } = useAuth();
+  const { user: authUser, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (!authLoading && !authUser) {
+      router.replace('/login?redirect=/dashboard');
+    }
+  }, [authLoading, authUser, router]);
 
   const repScore = useMemo(() => {
     if (!jurorHistory || jurorHistory.length === 0) return 780;
@@ -65,6 +71,16 @@ function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  if (authLoading || !authUser) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center p-8 space-y-4">
+        <div className="w-10 h-10 border-3 border-violet-600 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Verifying session…</p>
+        <p className="text-xs text-slate-400">Please sign in to access your personal dispute dashboard.</p>
+      </div>
+    );
+  }
+
   const activeCases = cases.filter((c) => !isClosed(c));
   const closedCases = cases.filter((c) => isClosed(c));
   const asJuror = cases.filter((c) => c.myRole === 'JUROR');
@@ -75,7 +91,7 @@ function Dashboard() {
   const greet = mounted
     ? hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening'
     : 'Hello';
-  const firstName = (authUser?.name || identity.name || (identity.wallet ? `Juror ${identity.wallet.slice(2, 6).toUpperCase()}` : 'User')).split(' ')[0];
+  const firstName = (authUser?.name || (authUser?.wallet ? `Juror ${authUser.wallet.slice(2, 6).toUpperCase()}` : 'User')).split(' ')[0];
 
   const upcoming = useMemo(() => {
     const list: { when: string; time: string; icon: React.ReactNode; tone: string; title: string; sub: string; href: string }[] = [];

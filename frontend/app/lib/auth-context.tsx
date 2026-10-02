@@ -47,6 +47,23 @@ const AuthCtx = createContext<AuthContextValue>({
 
 const TOKEN_KEY = 'resolvia_token';
 
+function setSessionCookie(token: string) {
+  if (typeof document === 'undefined') return;
+  const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
+  document.cookie = `${TOKEN_KEY}=${encodeURIComponent(token)}; path=/; max-age=604800; SameSite=Lax${isSecure ? '; Secure' : ''}`;
+}
+
+function clearSessionCookie() {
+  if (typeof document === 'undefined') return;
+  document.cookie = `${TOKEN_KEY}=; path=/; max-age=0; SameSite=Lax`;
+}
+
+function getSessionCookie(): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(new RegExp('(?:^|;\\s*)' + TOKEN_KEY + '=([^;]*)'));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api/backend/${path}`, {
     ...init,
@@ -71,15 +88,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const adopt = useCallback((token: string, u: AuthUser) => {
     localStorage.setItem(TOKEN_KEY, token);
+    setSessionCookie(token);
     setUser(u);
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
+    const localToken = localStorage.getItem(TOKEN_KEY);
+    const cookieToken = getSessionCookie();
+    const token = localToken || cookieToken;
+
     if (!token) {
+      clearSessionCookie();
       setLoading(false);
       return;
     }
+
+    // Keep storage and cookie in sync
+    localStorage.setItem(TOKEN_KEY, token);
+    setSessionCookie(token);
+
     api<{ user: AuthUser }>('auth/me', { headers: { Authorization: `Bearer ${token}` } })
       .then((d) => {
         setUser(d.user);
@@ -110,8 +137,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .catch((e) => {
         // Only a definite auth rejection kills the session. Transient network
         // errors (backend restart, blip) must NOT silently log the user out.
-        if (e instanceof Error && (e as any).status === 401 || (e as any).status === 403) {
+        if (e instanceof Error && ((e as any).status === 401 || (e as any).status === 403)) {
           localStorage.removeItem(TOKEN_KEY);
+          clearSessionCookie();
         }
       })
       .finally(() => setLoading(false));
@@ -324,6 +352,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
+    try {
+      localStorage.removeItem('resolvia_demo_state_v1');
+    } catch {}
+    clearSessionCookie();
     setUser(null);
   }, []);
 

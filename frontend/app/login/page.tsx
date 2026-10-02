@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Mail, Phone, ArrowRight, ShieldCheck, TrendingUp, Footprints, RefreshCw, KeyRound, Wallet, ExternalLink, CheckCircle2, User } from 'lucide-react';
 import { useAuth, type AuthUser } from '../lib/auth-context';
 import {
@@ -21,13 +21,19 @@ import {
 } from '../components/auth-ui';
 
 export default function LoginPage() {
-  return <AuthLayout>
-    <LoginInner />
-  </AuthLayout>;
+  return (
+    <Suspense fallback={null}>
+      <AuthLayout>
+        <LoginInner />
+      </AuthLayout>
+    </Suspense>
+  );
 }
 
 function LoginInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTarget = searchParams.get('redirect') || '/dashboard';
   const { user, requestOtp, verifyOtp, googleLogin, walletLogin, updateProfile } = useAuth();
 
   const [method, setMethod] = useState<'email' | 'wallet'>('email');
@@ -54,10 +60,10 @@ function LoginInner() {
             localStorage.setItem('resolvia_name_configured', 'true');
           }
         }
-        router.push('/dashboard');
+        router.push(redirectTarget);
       }
     },
-    [googleLogin, router, fullName, updateProfile]
+    [googleLogin, router, fullName, updateProfile, redirectTarget]
   );
   const { ref: googleRef, ready: googleReady, enabled: googleEnabled } = useGoogle(handleGoogle);
   const { enabled: githubEnabled, login: githubRedirect } = useGitHub();
@@ -111,7 +117,7 @@ function LoginInner() {
       provider: 'email',
       wallet: '0x3aF3a4898492E92aA827E16b67e059d2E',
     });
-    setTimeout(() => router.push('/dashboard'), 1400);
+    setTimeout(() => router.push(redirectTarget), 1400);
   };
 
   const connectMetaMask = async () => {
@@ -140,7 +146,7 @@ function LoginInner() {
           provider: 'email',
           wallet: addr,
         });
-        setTimeout(() => router.push('/dashboard'), 1400);
+        setTimeout(() => router.push(redirectTarget), 1400);
       }
     } catch (e: any) {
       setError(e.message || 'Failed to connect MetaMask');

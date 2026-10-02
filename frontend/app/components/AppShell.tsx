@@ -25,6 +25,7 @@ import {
   Menu,
   X,
   Sparkles,
+  Lock,
 } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import { useAuth } from '../lib/auth-context';
@@ -66,7 +67,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { identity, activeRole, setActiveRole, unreadCount, invitations, profilePrefs, rslvBalance, claimFaucet, isLoggedIn, logout: demoLogout } = useApp();
-  const { user: authUser, logout: authLogout } = useAuth();
+  const { user: authUser, loading: authLoading, logout: authLogout } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [customizerOpen, setCustomizerOpen] = useState(false);
@@ -126,18 +127,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const displayName =
     authUser?.name ||
     localName ||
-    (isLoggedIn ? identity.name : 'Guest User');
+    (isLoggedIn && authUser ? identity.name : 'Guest User');
   const displayRole = authUser
     ? profilePrefs.roleType === 'PROFESSIONAL'
       ? 'Arbitration Professional'
       : profilePrefs.roleType === 'INSTITUTION'
       ? 'Institutional Member'
       : 'Verified Member'
-    : isLoggedIn
-    ? `Demo · ${activeRole === 'CLAIMANT' ? 'Claimant' : activeRole === 'RESPONDENT' ? 'Respondent' : 'Juror'}`
     : 'Not signed in';
   const isMetaMaskLinked = Boolean(authUser?.metamaskAddress);
-  const activeWalletAddress = authUser?.metamaskAddress || authUser?.wallet || (isLoggedIn ? identity.wallet : null);
+  const activeWalletAddress = authUser?.metamaskAddress || authUser?.wallet || null;
   const walletShort = activeWalletAddress
     ? `${activeWalletAddress.slice(0, 6)}…${activeWalletAddress.slice(-4)}`
     : null;
@@ -196,14 +195,64 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const isPublicStandalone =
     pathname === '/proof-verifier' ||
+    pathname === '/protocol' ||
     pathname === '/resources' ||
     pathname.startsWith('/case-studies');
+
+  useEffect(() => {
+    if (!authLoading && !authUser && !isPublicStandalone) {
+      router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
+    }
+  }, [authLoading, authUser, isPublicStandalone, pathname, router]);
+
+  if (authLoading && !isPublicStandalone) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] dark:bg-[#0b0f19] flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-10 h-10 border-3 border-violet-600 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-sm font-bold text-slate-800 dark:text-slate-200">Verifying session…</p>
+        <p className="text-xs text-slate-400 mt-1">Please wait while we check your access</p>
+      </div>
+    );
+  }
+
+  if (!authUser && !isPublicStandalone) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] dark:bg-[#0b0f19] flex flex-col">
+        <PublicNav active="home" />
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-md mx-auto">
+          <div className="w-14 h-14 rounded-2xl bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 flex items-center justify-center mb-5 shadow-lg shadow-violet-600/10">
+            <Lock className="w-7 h-7" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white">Authentication Required</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+            You must be signed in to access the Resolvia dashboard and dispute workspace.
+          </p>
+          <div className="flex items-center gap-3 mt-6">
+            <Link
+              href={`/login?redirect=${encodeURIComponent(pathname)}`}
+              className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all shadow-md shadow-violet-600/20"
+            >
+              Sign In to Continue
+            </Link>
+            <Link
+              href="/"
+              className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all"
+            >
+              Return Home
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!authUser && isPublicStandalone) {
     const activeKey = pathname.startsWith('/case-studies')
       ? 'case-studies'
       : pathname === '/proof-verifier'
       ? 'proof-verifier'
+      : pathname === '/protocol'
+      ? 'protocol'
       : 'resources';
 
     return (

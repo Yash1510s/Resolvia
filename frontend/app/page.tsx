@@ -45,7 +45,7 @@ export default function Root() {
       <div id="how-it-works" className="flex-1">
         <LandingPage
           onGetStarted={getStarted}
-          onOpenDashboard={() => router.push('/dashboard')}
+          onOpenDashboard={() => router.push(authUser ? '/dashboard' : '/login?redirect=/dashboard')}
           onOpenWizard={openWizard}
           onWatchDemo={watchDemo}
           isLoggedIn={!!authUser}
