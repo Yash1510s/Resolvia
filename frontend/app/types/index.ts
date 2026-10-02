@@ -362,7 +362,8 @@ export type NotificationKind =
   | 'VERDICT'
   | 'APPEAL_WINDOW'
   | 'FINALIZED'
-  | 'CASE_STUDY';
+  | 'CASE_STUDY'
+  | 'SYSTEM';
 
 export interface AppNotification {
   id: string;

@@ -690,10 +690,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setNotifications((prev) => [
         {
           id: 'notif-faucet-' + now,
-          type: 'SYSTEM',
+          kind: 'SYSTEM',
           title: `+${FAUCET_AMOUNT} RSLV Testnet Faucet Credited`,
           body: `Dispensed ${FAUCET_AMOUNT} RSLV testnet tokens to your active wallet for protocol interactions. Next faucet claim unlocked in 24 hours.`,
-          timestamp: tsNow(),
+          createdAt: tsNow(),
           read: false,
         },
         ...prev,
