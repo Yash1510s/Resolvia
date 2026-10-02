@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   User,
   Shield,
@@ -44,6 +44,20 @@ const NAV: { id: Section; label: string; sub: string; icon: React.ReactNode }[] 
   { id: 'data', label: 'Data & Export', sub: 'Download or delete your data', icon: <Database className="w-4.5 h-4.5" /> },
   { id: 'accessibility', label: 'Accessibility', sub: 'Make Resolvia work for you', icon: <A11yIcon className="w-4.5 h-4.5" /> },
 ];
+
+function getSessionIdFromToken(token: string | null): string | null {
+  if (!token) return null;
+  try {
+    const parts = token.split('.');
+    if (parts.length >= 2) {
+      const payload = JSON.parse(atob(parts[1]));
+      return payload.sid || payload.jti || null;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
 
 export default function SettingsPage() {
   const { profilePrefs, setProfilePrefs, availability, setAvailability, resetDemoData, cases, logout } = useApp();
@@ -125,12 +139,7 @@ export default function SettingsPage() {
   }, [authUser]);
   const [savedFlash, setSavedFlash] = useState(false);
   const { theme, setTheme } = useTheme();
-  const [language, setLanguageState] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('resolvia_language') || 'English (Default)';
-    }
-    return 'English (Default)';
-  });
+  const [language, setLanguageState] = useState<string>('English (Default)');
   const setLanguage = (v: string) => {
     setLanguageState(v);
     if (typeof window !== 'undefined') localStorage.setItem('resolvia_language', v);
@@ -138,13 +147,7 @@ export default function SettingsPage() {
     setTimeout(() => setSavedFlash(false), 2000);
   };
 
-  const [twoFA, setTwoFAState] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const v = localStorage.getItem('resolvia_2fa_enabled');
-      return v !== null ? v === 'true' : true;
-    }
-    return true;
-  });
+  const [twoFA, setTwoFAState] = useState<boolean>(true);
   const setTwoFA = (v: boolean) => {
     setTwoFAState(v);
     if (typeof window !== 'undefined') localStorage.setItem('resolvia_2fa_enabled', String(v));
@@ -152,13 +155,7 @@ export default function SettingsPage() {
     setTimeout(() => setSavedFlash(false), 2000);
   };
 
-  const [loginNotifs, setLoginNotifsState] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const v = localStorage.getItem('resolvia_login_notifs');
-      return v !== null ? v === 'true' : true;
-    }
-    return true;
-  });
+  const [loginNotifs, setLoginNotifsState] = useState<boolean>(true);
   const setLoginNotifs = (v: boolean) => {
     setLoginNotifsState(v);
     if (typeof window !== 'undefined') localStorage.setItem('resolvia_login_notifs', String(v));
@@ -166,23 +163,202 @@ export default function SettingsPage() {
     setTimeout(() => setSavedFlash(false), 2000);
   };
 
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('resolvia_custom_avatar') || authUser?.avatarUrl || null;
-    }
-    return authUser?.avatarUrl || null;
-  });
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(authUser?.avatarUrl || null);
+  const userSelectedAvatarRef = useRef<boolean>(false);
+  const [hydrated, setHydrated] = useState<boolean>(false);
 
-  const [mobileRevoked, setMobileRevokedState] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('resolvia_mobile_session_revoked') === 'true';
+  const [mobileRevoked, setMobileRevokedState] = useState<boolean>(false);
+  const [mobileRevokedConfirmed, setMobileRevokedConfirmed] = useState<boolean>(false);
+  const [checkingMobileStatus, setCheckingMobileStatus] = useState<boolean>(false);
+  const lastRevocationTimeRef = useRef<number>(0);
+  const statusSeqRef = useRef<number>(0);
+
+  const checkMobileStatus = useCallback(async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('resolvia_token') : null;
+    if (!token) {
+      setMobileRevokedState(false);
+      setMobileRevokedConfirmed(false);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('resolvia_mobile_session_revoked');
+      }
+      return;
     }
-    return false;
-  });
+    const seq = ++statusSeqRef.current;
+    const reqTime = Date.now();
+    setCheckingMobileStatus(true);
+    try {
+      const r = await fetch('/api/backend/auth/sessions/mobile-status', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (seq !== statusSeqRef.current) {
+        return;
+      }
+      if (!r.ok) {
+        throw new Error(`Status check returned HTTP ${r.status}`);
+      }
+      const status = await r.json();
+
+      if (seq !== statusSeqRef.current) {
+        return;
+      }
+
+      // Ignore responses initiated before a successful revocation to prevent stale
+      // active-session results from clearing the REVOKED state or its stored marker
+      if (lastRevocationTimeRef.current >= reqTime) {
+        return;
+      }
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('resolvia_mobile_session_revoked');
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            const revokedAtMs = typeof parsed?.revokedAt === 'number'
+              ? (parsed.revokedAt < 1e11 ? parsed.revokedAt * 1000 : parsed.revokedAt)
+              : 0;
+            if (parsed?.revoked && revokedAtMs >= reqTime) {
+              return;
+            }
+          } catch {}
+        }
+      }
+      if (status && status.hasMobileSession) {
+        if (status.revoked) {
+          setMobileRevokedState(true);
+          setMobileRevokedConfirmed(true);
+          if (typeof window !== 'undefined') {
+            const serverRevokedAt = typeof status.revokedAt === 'number'
+              ? (status.revokedAt < 1e11 ? status.revokedAt * 1000 : status.revokedAt)
+              : typeof status.revoked_at === 'number'
+              ? (status.revoked_at < 1e11 ? status.revoked_at * 1000 : status.revoked_at)
+              : null;
+            const finalRevokedAt = serverRevokedAt ?? Date.now();
+            localStorage.setItem(
+              'resolvia_mobile_session_revoked',
+              JSON.stringify({ sessionId: status.sessionId, revoked: true, revokedAt: finalRevokedAt })
+            );
+          }
+        } else {
+          // Newer active session confirmed: clear marker and reset revoked state, exposing Revoke action
+          setMobileRevokedState(false);
+          setMobileRevokedConfirmed(false);
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('resolvia_mobile_session_revoked');
+          }
+        }
+      } else if (status && !status.hasMobileSession) {
+        setMobileRevokedState(false);
+        setMobileRevokedConfirmed(false);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('resolvia_mobile_session_revoked');
+        }
+      }
+    } catch {
+      // Apply error handling only if it is still the latest request
+      if (seq !== statusSeqRef.current) {
+        return;
+      }
+      // Retain stale-request guard using lastRevocationTimeRef
+      if (lastRevocationTimeRef.current >= reqTime) {
+        return;
+      }
+      // Preserve stored revocation marker and leave mobileRevokedState unchanged;
+      // keep mobileRevokedConfirmed false so the UI shows UNCONFIRMED
+      setMobileRevokedConfirmed(false);
+    } finally {
+      // Apply cleanup only if still the latest request
+      if (seq === statusSeqRef.current) {
+        setCheckingMobileStatus(false);
+      }
+    }
+  }, []);
+
+  // One-time localStorage reads for language and security preferences
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedLang = localStorage.getItem('resolvia_language');
+      if (storedLang) setLanguageState(storedLang);
+
+      const stored2FA = localStorage.getItem('resolvia_2fa_enabled');
+      if (stored2FA !== null) setTwoFAState(stored2FA === 'true');
+
+      const storedNotifs = localStorage.getItem('resolvia_login_notifs');
+      if (storedNotifs !== null) setLoginNotifsState(storedNotifs === 'true');
+
+      const storedMobileRev = localStorage.getItem('resolvia_mobile_session_revoked');
+      const isMobileDevice = typeof navigator !== 'undefined' && /mobi|android|touch|mini/i.test(navigator.userAgent);
+
+      if (isMobileDevice) {
+        // If currently in an active mobile session, clear any stale revocation flag
+        if (storedMobileRev !== null) {
+          localStorage.removeItem('resolvia_mobile_session_revoked');
+        }
+        setMobileRevokedState(false);
+        setMobileRevokedConfirmed(false);
+      } else if (storedMobileRev !== null) {
+        // Clear legacy numeric timestamp markers or raw boolean markers before session-ID matching
+        const isLegacyNumeric = !isNaN(Number(storedMobileRev)) && storedMobileRev.trim() !== '';
+        const isLegacyBoolean = storedMobileRev === 'true' || storedMobileRev === 'false';
+
+        if (isLegacyNumeric || isLegacyBoolean || !storedMobileRev.trim()) {
+          localStorage.removeItem('resolvia_mobile_session_revoked');
+          setMobileRevokedState(false);
+          setMobileRevokedConfirmed(false);
+        } else {
+          let parsedRecord: { sessionId?: string; revoked?: boolean } | null = null;
+          try {
+            parsedRecord = JSON.parse(storedMobileRev);
+          } catch {
+            parsedRecord = null;
+          }
+
+          // When revocation status cannot be established, clear marker and reset revoked state instead of displaying REVOKED indefinitely
+          if (
+            !parsedRecord ||
+            typeof parsedRecord !== 'object' ||
+            typeof parsedRecord.sessionId !== 'string' ||
+            !parsedRecord.sessionId.trim() ||
+            typeof parsedRecord.revoked !== 'boolean'
+          ) {
+            localStorage.removeItem('resolvia_mobile_session_revoked');
+            setMobileRevokedState(false);
+            setMobileRevokedConfirmed(false);
+          } else {
+            setMobileRevokedState(parsedRecord.revoked);
+            // Stored marker does not establish confirmed revocation; show unconfirmed state until server confirms status
+            setMobileRevokedConfirmed(false);
+            if (!parsedRecord.revoked) {
+              localStorage.removeItem('resolvia_mobile_session_revoked');
+            }
+          }
+        }
+      }
+
+      // Check server-provided mobile-session status so reloads reflect current mobile state,
+      // including after signing in again on mobile
+      checkMobileStatus();
+    }
+    setHydrated(true);
+  }, [checkMobileStatus]);
+
+  // Initialize avatar preference without overwriting a user-selected in-memory avatar
+  useEffect(() => {
+    if (userSelectedAvatarRef.current) return;
+    if (typeof window !== 'undefined') {
+      const storedAvatar = localStorage.getItem('resolvia_custom_avatar');
+      if (storedAvatar) {
+        setAvatarUrl(storedAvatar);
+        return;
+      }
+    }
+    if (authUser?.avatarUrl) {
+      setAvatarUrl(authUser.avatarUrl);
+    }
+  }, [authUser?.avatarUrl]);
   const [revokingMobile, setRevokingMobile] = useState<boolean>(false);
   const setMobileRevoked = async (v: boolean) => {
     if (!v) {
       setMobileRevokedState(false);
+      setMobileRevokedConfirmed(false);
       if (typeof window !== 'undefined') localStorage.removeItem('resolvia_mobile_session_revoked');
       return;
     }
@@ -203,9 +379,36 @@ export default function SettingsPage() {
       if (!res.ok) {
         throw new Error(`Server returned HTTP ${res.status}`);
       }
-      // Only retain localStorage update and update displayed state after server-side revocation succeeds
+      const data = await res.json().catch(() => ({}));
+      const now = Date.now();
+      lastRevocationTimeRef.current = now;
+
+      // When no matching mobile session was found or revoked=False, do not display REVOKED or store a marker
+      if (!data.revoked) {
+        setMobileRevokedState(false);
+        setMobileRevokedConfirmed(false);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('resolvia_mobile_session_revoked');
+        }
+        alert(data.message || 'No active mobile session found to revoke.');
+        return;
+      }
+
+      // Use server-provided mobile-session state instead of desktop token's session ID
+      const mobileSessionId = data.mobileSessionId || data.sessionId || null;
       setMobileRevokedState(true);
-      if (typeof window !== 'undefined') localStorage.setItem('resolvia_mobile_session_revoked', 'true');
+      setMobileRevokedConfirmed(true);
+      if (typeof window !== 'undefined') {
+        const revokedAtMs = typeof data.revokedAt === 'number'
+          ? (data.revokedAt < 1e11 ? data.revokedAt * 1000 : data.revokedAt)
+          : now;
+        const record = JSON.stringify({
+          sessionId: mobileSessionId,
+          revoked: true,
+          revokedAt: revokedAtMs,
+        });
+        localStorage.setItem('resolvia_mobile_session_revoked', record);
+      }
     } catch (err: any) {
       alert(`Failed to revoke mobile session on server: ${err?.message || 'Network error'}. State unchanged.`);
     } finally {
@@ -221,6 +424,7 @@ export default function SettingsPage() {
       const reader = new FileReader();
       reader.onload = (ev) => {
         const dataUrl = ev.target?.result as string;
+        userSelectedAvatarRef.current = true;
         setAvatarUrl(dataUrl);
         if (typeof window !== 'undefined') {
           try {
@@ -281,7 +485,23 @@ export default function SettingsPage() {
           throw new Error(errData?.detail || `Failed to delete account (HTTP ${acctRes.status})`);
         }
         // Only after account deletion succeeds:
-        resetDemoData();
+        if (typeof window !== 'undefined') {
+          const keysToRemove = [
+            'resolvia_token',
+            'resolvia_refresh_token',
+            'resolvia_app_state_v1',
+            'resolvia_profile_prefs_v1',
+            'resolvia_custom_avatar',
+            'resolvia_user_phone',
+            'resolvia_user_name',
+            'resolvia_2fa_enabled',
+            'resolvia_login_notifs',
+            'resolvia_mobile_session_revoked',
+            'resolvia_language',
+          ];
+          keysToRemove.forEach((k) => window.localStorage.removeItem(k));
+          document.cookie = 'resolvia_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+        }
         logout();
         window.location.href = '/login';
       } catch (err: any) {
@@ -552,7 +772,7 @@ export default function SettingsPage() {
                         <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300">Add an extra layer of security with authenticator app</p>
                       </div>
                     </div>
-                    <Toggle on={twoFA} onChange={setTwoFA} />
+                    {hydrated && <Toggle on={twoFA} onChange={setTwoFA} />}
                   </div>
                   <div className="flex items-center justify-between gap-4 py-3">
                     <div className="flex items-center gap-3">
@@ -562,7 +782,7 @@ export default function SettingsPage() {
                         <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300">Get notified of new logins</p>
                       </div>
                     </div>
-                    <Toggle on={loginNotifs} onChange={setLoginNotifs} />
+                    {hydrated && <Toggle on={loginNotifs} onChange={setLoginNotifs} />}
                   </div>
                 </div>
               </Card>
@@ -584,8 +804,21 @@ export default function SettingsPage() {
                       <p className="text-[12.5px] font-bold text-slate-900 dark:text-white">Mobile · Last active 2 days ago</p>
                       <p className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Mumbai, IN</p>
                     </div>
-                    {mobileRevoked ? (
+                    {mobileRevoked && mobileRevokedConfirmed ? (
                       <span className="text-[10px] font-bold text-slate-500 bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded-md">REVOKED</span>
+                    ) : mobileRevoked ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 rounded-md">UNCONFIRMED</span>
+                        <button
+                          type="button"
+                          onClick={() => checkMobileStatus()}
+                          disabled={checkingMobileStatus}
+                          className="text-[11px] font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 cursor-pointer disabled:opacity-50"
+                          title="Retry status check"
+                        >
+                          {checkingMobileStatus ? 'Checking…' : 'Retry'}
+                        </button>
+                      </div>
                     ) : (
                       <button
                         type="button"

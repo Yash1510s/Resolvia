@@ -27,6 +27,7 @@ try:
         sync_user_state_to_mongo,
         load_user_state_from_mongo,
         is_mongo_active,
+        get_mongo_db,
         find_registered_user,
         get_user_by_id_from_mongo,
     )
@@ -39,6 +40,7 @@ except ImportError:
             sync_user_state_to_mongo,
             load_user_state_from_mongo,
             is_mongo_active,
+            get_mongo_db,
             find_registered_user,
             get_user_by_id_from_mongo,
         )
@@ -49,6 +51,7 @@ except ImportError:
         sync_user_state_to_mongo = lambda sub, s: None
         load_user_state_from_mongo = lambda sub: None
         is_mongo_active = lambda: False
+        get_mongo_db = lambda: None
         find_registered_user = lambda q: None
         get_user_by_id_from_mongo = lambda uid: None
 
@@ -585,13 +588,9 @@ def delete_state(sub: str) -> bool:
         finally:
             c.close()
     if is_mongo_active():
-        try:
-            from backend.db_adapter import get_mongo_db
-            db = get_mongo_db()
-            if db:
-                db["user_states"].delete_one({"sub": sub})
-        except Exception:
-            pass
+        db = get_mongo_db()
+        if db:
+            db["user_states"].delete_one({"sub": sub})
     return True
 
 

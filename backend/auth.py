@@ -165,7 +165,8 @@ def _init_db() -> None:
                 user_id INTEGER NOT NULL REFERENCES users(id),
                 expires_at REAL NOT NULL,
                 revoked INTEGER NOT NULL DEFAULT 0,
-                created_at REAL NOT NULL
+                created_at REAL NOT NULL,
+                revoked_at REAL DEFAULT NULL
             );
             CREATE TABLE IF NOT EXISTS wallet_nonces (
                 address TEXT PRIMARY KEY,
@@ -206,6 +207,7 @@ def _init_db() -> None:
         for col, spec in [
             ("session_id", "TEXT"),
             ("device", "TEXT DEFAULT 'desktop'"),
+            ("revoked_at", "REAL DEFAULT NULL"),
         ]:
             if col not in existing_rt_cols:
                 try:
@@ -436,16 +438,31 @@ def get_current_user(request: Request) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid session token")
 
-    # Reject access JWTs issued for a revoked session
+    # Reject access JWTs issued for a revoked session or deleted user
     sid = payload.get("sid")
-    if sid:
-        with _db() as conn:
+    user_id_raw = payload.get("sub")
+    try:
+        user_id = int(user_id_raw) if user_id_raw is not None else None
+    except (ValueError, TypeError):
+        user_id = None
+
+    with _db() as conn:
+        if sid:
             revoked_row = conn.execute(
                 "SELECT revoked FROM refresh_tokens WHERE session_id=? AND revoked=1",
                 (sid,),
             ).fetchone()
             if revoked_row:
                 raise HTTPException(status_code=401, detail="Session has been revoked")
+        if user_id is not None:
+            user_row = conn.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone()
+            if not user_row:
+                rev_row = conn.execute(
+                    "SELECT 1 FROM refresh_tokens WHERE user_id=? AND revoked=1",
+                    (user_id,),
+                ).fetchone()
+                if rev_row:
+                    raise HTTPException(status_code=401, detail="Account has been deleted or session revoked")
 
     return _get_user_record(int(payload["sub"]))
 
@@ -461,14 +478,29 @@ def get_optional_user(request: Request) -> Optional[dict]:
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
         sid = payload.get("sid")
-        if sid:
-            with _db() as conn:
+        user_id_raw = payload.get("sub")
+        try:
+            user_id = int(user_id_raw) if user_id_raw is not None else None
+        except (ValueError, TypeError):
+            user_id = None
+
+        with _db() as conn:
+            if sid:
                 revoked_row = conn.execute(
                     "SELECT revoked FROM refresh_tokens WHERE session_id=? AND revoked=1",
                     (sid,),
                 ).fetchone()
                 if revoked_row:
                     return None
+            if user_id is not None:
+                user_row = conn.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone()
+                if not user_row:
+                    rev_row = conn.execute(
+                        "SELECT 1 FROM refresh_tokens WHERE user_id=? AND revoked=1",
+                        (user_id,),
+                    ).fetchone()
+                    if rev_row:
+                        return None
         return _get_user_record(int(payload["sub"]))
     except Exception:
         return None
@@ -1731,17 +1763,63 @@ def delete_saved_state(user: dict = Depends(get_current_user)):
     return {"ok": True, "message": "Saved state wiped successfully"}
 
 
+@router.get("/auth/sessions/mobile-status")
+def mobile_session_status(user: dict = Depends(get_current_user)):
+    """Check current mobile session revocation status for this user."""
+    user_id = user["id"]
+    with _db() as conn:
+        latest = conn.execute(
+            "SELECT session_id, created_at, revoked, revoked_at FROM refresh_tokens WHERE user_id=? AND (device='mobile' OR device='Mobile') ORDER BY created_at DESC LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        if latest:
+            is_revoked = bool(latest["revoked"])
+            return {
+                "hasMobileSession": True,
+                "revoked": is_revoked,
+                "sessionId": latest["session_id"],
+                "createdAt": latest["created_at"],
+                "revokedAt": latest["revoked_at"] if is_revoked else None,
+            }
+        return {
+            "hasMobileSession": False,
+            "revoked": False,
+            "sessionId": None,
+            "revokedAt": None,
+        }
+
+
 @router.post("/auth/sessions/revoke-mobile")
 def revoke_mobile_session(user: dict = Depends(get_current_user)):
     """Invalidate active mobile sessions / refresh tokens on the server."""
     user_id = user["id"]
+    now = time.time()
     with _db() as conn:
-        conn.execute(
-            "UPDATE refresh_tokens SET revoked=1 WHERE user_id=? AND (device='mobile' OR device='Mobile')",
+        latest_mobile = conn.execute(
+            "SELECT session_id, revoked, revoked_at FROM refresh_tokens WHERE user_id=? AND (device='mobile' OR device='Mobile') ORDER BY created_at DESC LIMIT 1",
             (user_id,),
-        )
-        conn.commit()
-    return {"status": "SUCCESS", "message": "Mobile session revoked"}
+        ).fetchone()
+        mobile_sid = latest_mobile["session_id"] if latest_mobile and latest_mobile["session_id"] else None
+        found = latest_mobile is not None
+        effective_revoked_at = None
+        if found:
+            if latest_mobile["revoked"]:
+                # Already revoked: preserve recorded revocation timestamp rather than replacing it
+                effective_revoked_at = latest_mobile["revoked_at"] if latest_mobile["revoked_at"] is not None else now
+            else:
+                conn.execute(
+                    "UPDATE refresh_tokens SET revoked=1, revoked_at=? WHERE user_id=? AND (device='mobile' OR device='Mobile') AND revoked=0",
+                    (now, user_id),
+                )
+                conn.commit()
+                effective_revoked_at = now
+    return {
+        "status": "SUCCESS" if found else "NOT_FOUND",
+        "message": "Mobile session revoked" if found else "No mobile session found",
+        "revokedAt": int(effective_revoked_at) if found and effective_revoked_at is not None else None,
+        "mobileSessionId": mobile_sid,
+        "revoked": bool(found),
+    }
 
 
 @router.post("/auth/sessions/revoke")
@@ -1770,7 +1848,7 @@ def delete_user_account(user: dict = Depends(get_current_user)):
 
     # 2. SQLite user, wallet, and session records (atomic transaction)
     with _db() as conn:
-        conn.execute("DELETE FROM refresh_tokens WHERE user_id=?", (user_id,))
+        conn.execute("UPDATE refresh_tokens SET revoked=1 WHERE user_id=?", (user_id,))
         conn.execute("DELETE FROM wallets WHERE user_id=?", (user_id,))
         conn.execute("DELETE FROM users WHERE id=?", (user_id,))
         conn.commit()

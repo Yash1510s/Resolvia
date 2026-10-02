@@ -34,7 +34,9 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
   useEffect(() => {
     if (!open) return;
 
-    const checkAndSchedule = () => {
+    let timer: NodeJS.Timeout | null = null;
+
+    const updateCooldown = () => {
       if (typeof window === 'undefined') {
         setRemainingHours(0);
         return;
@@ -55,18 +57,20 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
       const cooldownMs = 24 * 60 * 60 * 1000;
       if (elapsed < cooldownMs) {
         const remainingMs = cooldownMs - elapsed;
-        setRemainingHours(Math.max(1, Math.ceil(remainingMs / (60 * 60 * 1000))));
-        // Schedule component update when the cooldown expires while modal is open
-        const timer = setTimeout(() => {
-          setRemainingHours(0);
-        }, remainingMs + 50);
-        return timer;
+        const hours = Math.max(1, Math.ceil(remainingMs / (60 * 60 * 1000)));
+        setRemainingHours(hours);
+
+        // Recalculate remainingHours as time passes, including when less than an hour remains
+        const msToNextChange = (remainingMs % (60 * 60 * 1000)) || (60 * 60 * 1000);
+        const delay = Math.min(remainingMs + 50, msToNextChange + 50);
+        timer = setTimeout(updateCooldown, delay);
       } else {
         setRemainingHours(0);
       }
     };
 
-    const timer = checkAndSchedule();
+    updateCooldown();
+
     return () => {
       if (timer) clearTimeout(timer);
     };
