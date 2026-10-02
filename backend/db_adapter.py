@@ -56,9 +56,11 @@ def is_mongo_active() -> bool:
 def get_mongo_db():
     return _mongo_db
 
+get_db = get_mongo_db
+
 def sync_user_to_mongo(user_dict: Dict[str, Any]):
     """Sync or upsert a user record to MongoDB Atlas."""
-    if not is_mongo_active():
+    if _mongo_db is None:
         return
     try:
         users_col = _mongo_db["users"]
@@ -83,7 +85,7 @@ def sync_user_to_mongo(user_dict: Dict[str, Any]):
 
 def update_profile_in_mongo(user_id: int, updates: Dict[str, Any]):
     """Update profile fields in MongoDB Atlas."""
-    if not is_mongo_active():
+    if _mongo_db is None:
         return
     try:
         users_col = _mongo_db["users"]
@@ -95,7 +97,7 @@ def update_profile_in_mongo(user_id: int, updates: Dict[str, Any]):
 
 def sync_dispute_to_mongo(dispute_dict: Dict[str, Any]):
     """Sync or upsert a dispute record to MongoDB Atlas."""
-    if not is_mongo_active():
+    if _mongo_db is None:
         return
     try:
         disputes_col = _mongo_db["disputes"]
@@ -110,7 +112,7 @@ def sync_dispute_to_mongo(dispute_dict: Dict[str, Any]):
 
 def get_disputes_from_mongo(query: dict) -> list[Dict[str, Any]]:
     """Query disputes from MongoDB Atlas."""
-    if not is_mongo_active():
+    if _mongo_db is None:
         return []
     try:
         disputes_col = _mongo_db["disputes"]
@@ -122,7 +124,7 @@ def get_disputes_from_mongo(query: dict) -> list[Dict[str, Any]]:
 
 def get_all_disputes_from_mongo() -> list[Dict[str, Any]]:
     """Query all disputes from MongoDB Atlas."""
-    if not is_mongo_active():
+    if _mongo_db is None:
         return []
     try:
         disputes_col = _mongo_db["disputes"]
@@ -133,7 +135,7 @@ def get_all_disputes_from_mongo() -> list[Dict[str, Any]]:
 
 def get_user_by_id_from_mongo(user_id: int) -> Optional[Dict[str, Any]]:
     """Lookup a single user by integer userId from MongoDB Atlas."""
-    if not is_mongo_active():
+    if _mongo_db is None:
         return None
     try:
         users_col = _mongo_db["users"]
@@ -144,16 +146,16 @@ def get_user_by_id_from_mongo(user_id: int) -> Optional[Dict[str, Any]]:
 
 def find_registered_user(query_str: str) -> Optional[Dict[str, Any]]:
     """Find a registered user by email, name, wallet, or userId (exact or partial)."""
-    if not is_mongo_active() or not query_str:
+    if _mongo_db is None or not query_str:
         return None
-    q = str(query_str).strip()
+    q = query_str.strip()
     if not q:
         return None
     try:
         import re
         users_col = _mongo_db["users"]
         # Exact / case-insensitive search
-        conds = [
+        conds: list[dict[str, Any]] = [
             {"email": {"$regex": f"^{re.escape(q)}$", "$options": "i"}},
             {"assignedWallet": {"$regex": f"^{re.escape(q)}$", "$options": "i"}},
             {"name": {"$regex": f"^{re.escape(q)}$", "$options": "i"}},
@@ -166,7 +168,7 @@ def find_registered_user(query_str: str) -> Optional[Dict[str, Any]]:
 
         # Substring search if query is at least 3 chars
         if len(q) >= 3:
-            sub_conds = [
+            sub_conds: list[dict[str, Any]] = [
                 {"email": {"$regex": re.escape(q), "$options": "i"}},
                 {"name": {"$regex": re.escape(q), "$options": "i"}},
                 {"assignedWallet": {"$regex": re.escape(q), "$options": "i"}},
@@ -180,14 +182,14 @@ def find_registered_user(query_str: str) -> Optional[Dict[str, Any]]:
 
 def search_registered_users(query_str: str, limit: int = 10) -> list[Dict[str, Any]]:
     """Search registered users for autocomplete suggestion."""
-    if not is_mongo_active():
+    if _mongo_db is None:
         return []
-    q = str(query_str or "").strip()
+    q = (query_str or "").strip()
     try:
         import re
         users_col = _mongo_db["users"]
         if q:
-            conds = [
+            conds: list[dict[str, Any]] = [
                 {"email": {"$regex": re.escape(q), "$options": "i"}},
                 {"name": {"$regex": re.escape(q), "$options": "i"}},
                 {"assignedWallet": {"$regex": re.escape(q), "$options": "i"}},
@@ -204,13 +206,13 @@ def search_registered_users(query_str: str, limit: int = 10) -> list[Dict[str, A
 
 def sync_user_state_to_mongo(sub: str, state_dict: dict):
     """Sync full user workspace state to MongoDB Atlas."""
-    if not is_mongo_active() or not sub:
+    if _mongo_db is None or not sub:
         return
     try:
         state_col = _mongo_db["user_state"]
         state_col.update_one(
-            {"sub": str(sub)},
-            {"$set": {"sub": str(sub), "state": state_dict, "updatedAt": time.time()}},
+            {"sub": sub},
+            {"$set": {"sub": sub, "state": state_dict, "updatedAt": time.time()}},
             upsert=True,
         )
     except Exception as e:
@@ -218,15 +220,13 @@ def sync_user_state_to_mongo(sub: str, state_dict: dict):
 
 def load_user_state_from_mongo(sub: str) -> Optional[dict]:
     """Load user workspace state from MongoDB Atlas."""
-    if not is_mongo_active() or not sub:
+    if _mongo_db is None or not sub:
         return None
     try:
         state_col = _mongo_db["user_state"]
-        doc = state_col.find_one({"sub": str(sub)}, {"_id": 0})
+        doc = state_col.find_one({"sub": sub}, {"_id": 0})
         if doc and "state" in doc:
             return doc["state"]
     except Exception as e:
         print(f"[Database] MongoDB load user_state error: {e}")
     return None
-
-

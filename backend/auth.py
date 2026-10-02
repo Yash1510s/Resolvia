@@ -1556,7 +1556,7 @@ def update_user_profile(body: ProfileUpdateIn, user: dict = Depends(get_current_
 
     updated = _get_user_record(user_id)
     if db_adapter and db_adapter.is_mongo_active():
-        dump_data = body.model_dump(exclude_unset=True) if hasattr(body, "model_dump") else body.dict(exclude_unset=True)
+        dump_data = body.model_dump(exclude_unset=True)
         db_adapter.update_profile_in_mongo(user_id, dump_data)
     return {"status": "SUCCESS", "user": updated}
 
@@ -1856,14 +1856,15 @@ def delete_user_account(user: dict = Depends(get_current_user)):
     # 3. MongoDB user deletion (treat exceptions and unsuccessful deletion as failures)
     if db_adapter and db_adapter.is_mongo_active():
         try:
-            mongo_db = db_adapter.get_db()
-            existing = mongo_db["users"].find_one({"$or": [{"userId": user_id}, {"id": user_id}, {"_id": user_id}]})
-            if existing:
-                del_res = mongo_db["users"].delete_one({"_id": existing["_id"]})
-                if del_res.deleted_count == 0:
-                    raise HTTPException(status_code=500, detail="Failed to delete user document from MongoDB database")
-                if mongo_db["users"].find_one({"_id": existing["_id"]}) is not None:
-                    raise HTTPException(status_code=500, detail="MongoDB user deletion verification failed")
+            mongo_db = db_adapter.get_mongo_db()
+            if mongo_db is not None:
+                existing = mongo_db["users"].find_one({"$or": [{"userId": user_id}, {"id": user_id}, {"_id": user_id}]})
+                if existing:
+                    del_res = mongo_db["users"].delete_one({"_id": existing["_id"]})
+                    if del_res.deleted_count == 0:
+                        raise HTTPException(status_code=500, detail="Failed to delete user document from MongoDB database")
+                    if mongo_db["users"].find_one({"_id": existing["_id"]}) is not None:
+                        raise HTTPException(status_code=500, detail="MongoDB user deletion verification failed")
         except HTTPException:
             raise
         except Exception:
