@@ -40,7 +40,7 @@ interface AppContextValue {
   login: (role?: MyCaseRole) => void;
   logout: () => void;
   rslvBalance: number;
-  claimFaucet: () => void;
+  claimFaucet: () => { success: boolean; message: string; remainingHours?: number };
   // case mutations
   createCase: (c: DisputeCase) => void;
   recordAnchors: (
@@ -89,7 +89,7 @@ interface AppContextValue {
 const AppCtx = createContext<AppContextValue | null>(null);
 
 const DEMO_IDENTITY: Identity = {
-  name: 'Alex Vance',
+  name: 'Resolvia Arbiter',
   wallet: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
   provider: 'email',
   sub: '0xf39F…b92266',
@@ -170,18 +170,35 @@ function rebaseline(cases: DisputeCase[], user?: any): DisputeCase[] {
 
       const userIdStr = typeof user === 'object' && user?.id ? String(user.id) : null;
 
-      const isClaimant =
-        (userIdStr && c.claimant?.id && String(c.claimant.id) === userIdStr) ||
-        (normalizedWallet && cClaimantWallet === normalizedWallet) ||
-        (normalizedEmail && (cClaimantEmail === normalizedEmail || cClaimantWallet === normalizedEmail));
+      const cClaimantName = c.claimant?.name?.toLowerCase()?.trim();
 
-      const isRespondent =
-        (userIdStr && c.respondent?.id && String(c.respondent.id) === userIdStr) ||
-        (normalizedWallet && cRespWallet === normalizedWallet) ||
-        (normalizedEmail && (cRespEmail === normalizedEmail || cRespWallet === normalizedEmail)) ||
-        (normalizedName && normalizedName.length >= 3 && cRespName && (cRespName === normalizedName || cRespName.includes(normalizedName) || normalizedName.includes(cRespName))) ||
-        (normalizedEmail && normalizedEmail.includes('romit') && (cRespName?.includes('romit') || cRespEmail?.includes('romit'))) ||
-        (normalizedName && (normalizedName.includes('swastikk') || normalizedName.includes('romit')) && (cRespName?.includes('romit') || cRespEmail?.includes('romit')));
+      const hasClaimantPartyId = Boolean(c.claimant?.id || cClaimantWallet || cClaimantEmail);
+      const isClaimant = hasClaimantPartyId
+        ? Boolean(
+            (userIdStr && c.claimant?.id && String(c.claimant.id) === userIdStr) ||
+            (normalizedWallet && cClaimantWallet && cClaimantWallet === normalizedWallet) ||
+            (normalizedEmail && (cClaimantEmail === normalizedEmail || cClaimantWallet === normalizedEmail))
+          )
+        : Boolean(
+            normalizedName &&
+            normalizedName.length >= 3 &&
+            cClaimantName &&
+            (cClaimantName === normalizedName || cClaimantName.includes(normalizedName) || normalizedName.includes(cClaimantName))
+          );
+
+      const hasRespPartyId = Boolean(c.respondent?.id || cRespWallet || cRespEmail);
+      const isRespondent = hasRespPartyId
+        ? Boolean(
+            (userIdStr && c.respondent?.id && String(c.respondent.id) === userIdStr) ||
+            (normalizedWallet && cRespWallet && cRespWallet === normalizedWallet) ||
+            (normalizedEmail && (cRespEmail === normalizedEmail || cRespWallet === normalizedEmail))
+          )
+        : Boolean(
+            normalizedName &&
+            normalizedName.length >= 3 &&
+            cRespName &&
+            (cRespName === normalizedName || cRespName.includes(normalizedName) || normalizedName.includes(cRespName))
+          );
 
       const isJuror = normalizedWallet && c.jurors?.some((j) => j.walletAddress && j.walletAddress.toLowerCase()?.trim() === normalizedWallet);
 
@@ -215,6 +232,7 @@ function loadSavedState(): {
   activeRole?: MyCaseRole;
   activeCaseId?: string;
   isLoggedIn?: boolean;
+  lastFaucetClaim?: number;
 } | null {
   try {
     if (typeof window === 'undefined') return null;
@@ -284,6 +302,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [authUser]);
   const [rslvBalance, setRslvBalance] = useState<number>(saved?.rslvBalance ?? 100);
+  const [lastFaucetClaim, setLastFaucetClaim] = useState<number | undefined>(saved?.lastFaucetClaim);
   const [wizardOpen, setWizardOpen] = useState<boolean>(false);
   const [availability, setAvailability] = useState<JuryAvailability>(
     saved?.availability || { inPool: true, state: 'AVAILABLE', maxConcurrent: 3 }
@@ -344,18 +363,57 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         window.localStorage.setItem(
           STATE_KEY,
-          JSON.stringify({ cases, invitations, notifications, rslvBalance, availability, activeRole, activeCaseId, isLoggedIn })
+          JSON.stringify({ cases, invitations, notifications, rslvBalance, availability, activeRole, activeCaseId, isLoggedIn, lastFaucetClaim })
         );
       } catch {
         /* storage full / private mode — demo continues in-memory */
       }
     }, 400);
     return () => clearTimeout(t);
-  }, [cases, invitations, notifications, rslvBalance, availability, activeRole, activeCaseId, isLoggedIn]);
+  }, [cases, invitations, notifications, rslvBalance, availability, activeRole, activeCaseId, isLoggedIn, lastFaucetClaim]);
+
+  // Synchronize accessibility preferences with document root
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    const a11y = profilePrefs?.accessibility;
+    if (!a11y) return;
+
+    if (a11y.reducedMotion) {
+      root.classList.add('reduced-motion');
+    } else {
+      root.classList.remove('reduced-motion');
+    }
+
+    if (a11y.largeText) {
+      root.classList.add('large-text');
+    } else {
+      root.classList.remove('large-text');
+    }
+
+    if (a11y.highContrast) {
+      root.classList.add('high-contrast');
+    } else {
+      root.classList.remove('high-contrast');
+    }
+  }, [profilePrefs?.accessibility]);
 
   const resetDemoData = useCallback(() => {
     try {
-      window.localStorage.removeItem(STATE_KEY);
+      if (typeof window !== 'undefined') {
+        const keysToRemove = [
+          STATE_KEY,
+          'resolvia_profile_prefs_v1',
+          'resolvia_custom_avatar',
+          'resolvia_user_phone',
+          'resolvia_user_name',
+          'resolvia_2fa_enabled',
+          'resolvia_login_notifs',
+          'resolvia_mobile_session_revoked',
+          'resolvia_language',
+        ];
+        keysToRemove.forEach((k) => window.localStorage.removeItem(k));
+      }
     } catch {
       /* ignore */
     }
@@ -376,8 +434,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     activeRole: MyCaseRole;
     activeCaseId: string;
     isLoggedIn: boolean;
+    lastFaucetClaim?: number;
   } | null>(null);
-  snapshotRef.current = { cases, invitations, notifications, rslvBalance, availability, activeRole, activeCaseId, isLoggedIn };
+  snapshotRef.current = { cases, invitations, notifications, rslvBalance, availability, activeRole, activeCaseId, isLoggedIn, lastFaucetClaim };
   const hydratedRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -420,6 +479,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (Array.isArray(st.invitations)) setInvitations(st.invitations);
             if (Array.isArray(st.notifications)) setNotifications(st.notifications);
             if (typeof st.rslvBalance === 'number') setRslvBalance(st.rslvBalance);
+            if (typeof st.lastFaucetClaim === 'number') setLastFaucetClaim(st.lastFaucetClaim);
             if (st.availability) setAvailability(st.availability);
             if (st.activeRole) setActiveRole(st.activeRole);
             if (st.activeCaseId) setActiveCaseId(st.activeCaseId);
@@ -566,7 +626,91 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(() => {
     setIsLoggedIn(false);
   }, []);
-  const claimFaucet = useCallback(() => setRslvBalance((b) => b + 50), []);
+  const claimFaucet = useCallback(() => {
+    const FAUCET_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+    const FAUCET_AMOUNT = 50;
+    const storageKey = authSub ? `resolvia_faucet_claim_${authSub}` : 'resolvia_faucet_claim_anon';
+
+    try {
+      if (typeof window === 'undefined') {
+        return { success: false, message: 'Browser environment required to claim tokens.' };
+      }
+
+      let lastClaim: number | null = null;
+      let lastClaimStr: string | null = null;
+      try {
+        lastClaimStr = window.localStorage.getItem(storageKey);
+      } catch {
+        return { success: false, message: 'Storage error: Unable to read claim timestamp. Tokens not credited.' };
+      }
+
+      const candidateTimestamps: number[] = [];
+      if (lastClaimStr) {
+        const parsed = Number(lastClaimStr);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          candidateTimestamps.push(parsed);
+        }
+      }
+      if (typeof lastFaucetClaim === 'number' && Number.isFinite(lastFaucetClaim) && lastFaucetClaim > 0) {
+        candidateTimestamps.push(lastFaucetClaim);
+      }
+      if (candidateTimestamps.length > 0) {
+        lastClaim = Math.max(...candidateTimestamps);
+      }
+
+      if (lastClaim !== null) {
+        const elapsed = Date.now() - lastClaim;
+        if (elapsed < FAUCET_COOLDOWN_MS) {
+          const remainingMs = FAUCET_COOLDOWN_MS - elapsed;
+          const remainingHours = Math.max(1, Math.ceil(remainingMs / (60 * 60 * 1000)));
+          return {
+            success: false,
+            message: `Faucet cooldown active. Testnet tokens can be claimed once every 24 hours. Next claim available in ~${remainingHours} hour${remainingHours > 1 ? 's' : ''}.`,
+            remainingHours,
+          };
+        }
+      }
+
+      const now = Date.now();
+      try {
+        window.localStorage.setItem(storageKey, String(now));
+      } catch {
+        return { success: false, message: 'Storage error: Faucet claim timestamp could not be saved. Tokens not credited.' };
+      }
+
+      const verifyWritten = window.localStorage.getItem(storageKey);
+      if (!verifyWritten || parseInt(verifyWritten, 10) !== now) {
+        return { success: false, message: 'Storage verification failed: Could not persist claim timestamp. Tokens not credited.' };
+      }
+
+      // Persist timestamp with account balance and credit the 50 RSLV
+      setLastFaucetClaim(now);
+      setRslvBalance((b) => b + FAUCET_AMOUNT);
+
+      setNotifications((prev) => [
+        {
+          id: 'notif-faucet-' + now,
+          type: 'SYSTEM',
+          title: `+${FAUCET_AMOUNT} RSLV Testnet Faucet Credited`,
+          body: `Dispensed ${FAUCET_AMOUNT} RSLV testnet tokens to your active wallet for protocol interactions. Next faucet claim unlocked in 24 hours.`,
+          timestamp: tsNow(),
+          read: false,
+        },
+        ...prev,
+      ]);
+
+      return {
+        success: true,
+        message: `+${FAUCET_AMOUNT} RSLV testnet tokens credited to your wallet! Cooldown active for 24 hours.`,
+      };
+    } catch {
+      // If the timestamp cannot be read or saved, do not credit the 50 RSLV.
+      return {
+        success: false,
+        message: 'Storage error: Faucet claim timestamp could not be saved. Tokens not credited.',
+      };
+    }
+  }, [authSub, lastFaucetClaim]);
   const openWizard = useCallback(() => setWizardOpen(true), []);
   const closeWizard = useCallback(() => setWizardOpen(false), []);
   const selectCase = useCallback((id: string) => setActiveCaseId(id), []);
@@ -574,15 +718,45 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const createCase = useCallback(
     (c: DisputeCase) => {
-      setCases((prev) => [c, ...prev]);
-      setActiveCaseId(c.id);
+      let caseToStore = c;
+      if (!caseToStore.jurors || caseToStore.jurors.length === 0) {
+        const sampled = sampleJurorPanel(
+          c.id,
+          c.category,
+          c.claimant?.wallet,
+          c.respondent?.wallet,
+          identity.wallet,
+          false
+        );
+        caseToStore = {
+          ...c,
+          jurors: sampled.jurors,
+          auditTrail: [
+            ...c.auditTrail,
+            {
+              eventId: 'evt-panel-' + Date.now(),
+              eventNumber: 'EVENT 002',
+              title: 'Jury Panel Selected via Reputation-Weighted Algorithm',
+              actor: 'JuryRegistry',
+              actorRole: 'Smart Contract',
+              timestamp: tsPretty(),
+              txHash: rndTx(),
+              blockNumber: 6284201,
+              metadataHash: sampled.samplingLog.selectionEntropySeed,
+              details: sampled.samplingLog.details,
+            },
+          ],
+        };
+      }
+      setCases((prev) => [caseToStore, ...prev]);
+      setActiveCaseId(caseToStore.id);
       setRslvBalance((b) => Math.max(0, b - 500));
       pushNotification({
         kind: 'CASE_SUBMITTED',
-        title: `Case submitted — ${c.caseNumber}`,
+        title: `Case submitted — ${caseToStore.caseNumber}`,
         body: 'Your case is registered. The respondent has been notified and has 48h to respond.',
-        caseId: c.id,
-        link: `/cases/${c.id}`,
+        caseId: caseToStore.id,
+        link: `/cases/${caseToStore.id}`,
       });
 
       // Immediate backend persistence and respondent notification
@@ -593,11 +767,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         fetch('/api/backend/disputes', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ case: c }),
+          body: JSON.stringify({ case: caseToStore }),
         }).catch((err) => console.warn('Background dispute persist note:', err));
       } catch {}
     },
-    [pushNotification]
+    [identity.wallet, pushNotification]
   );
 
   const recordAnchors = useCallback(

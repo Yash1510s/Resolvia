@@ -201,6 +201,18 @@ def _init_db() -> None:
             except Exception:
                 pass
 
+        cur.execute("PRAGMA table_info(refresh_tokens)")
+        existing_rt_cols = {row["name"] for row in cur.fetchall()}
+        for col, spec in [
+            ("session_id", "TEXT"),
+            ("device", "TEXT DEFAULT 'desktop'"),
+        ]:
+            if col not in existing_rt_cols:
+                try:
+                    conn.execute(f"ALTER TABLE refresh_tokens ADD COLUMN {col} {spec}")
+                except Exception:
+                    pass
+
 
 _init_db()
 
@@ -356,38 +368,58 @@ def _find_or_create_user(name: str, email: str, google_id: Optional[str] = None,
             "INSERT INTO users (name, email, google_id, github_id, created_at) VALUES (?,?,?,?,?)",
             (name, email, google_id, github_id, time.time()),
         )
+        if cur.lastrowid is None:
+            raise RuntimeError("Failed to insert user")
         return cur.lastrowid
 
 
-def _issue_token(user_id: int) -> str:
+def _issue_token(user_id: int, session_id: Optional[str] = None) -> str:
     user = _get_user_record(user_id)
+    sid = session_id or secrets.token_hex(16)
     payload = {
         "sub": str(user["id"]),  # RFC 7519 / PyJWT ≥2.10: sub must be a string
         "email": user["email"],
         "wallet": user["wallet"],
         "type": "access",
+        "sid": sid,
         "exp": int(time.time()) + ACCESS_TOKEN_TTL_SECONDS,
     }
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
 
-def _issue_refresh_token(user_id: int, conn: Optional[sqlite3.Connection] = None) -> str:
+def _issue_refresh_token(
+    user_id: int,
+    conn: Optional[sqlite3.Connection] = None,
+    session_id: Optional[str] = None,
+    device: str = "desktop",
+) -> str:
     raw_token = secrets.token_urlsafe(64)
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
     expires_at = time.time() + REFRESH_TOKEN_TTL_SECONDS
+    sid = session_id or secrets.token_hex(16)
+    now = time.time()
+    stmt = (
+        "INSERT INTO refresh_tokens (token_hash, user_id, expires_at, revoked, created_at, session_id, device) "
+        "VALUES (?,?,?,0,?,?,?)"
+    )
     if conn is not None:
-        conn.execute(
-            "INSERT INTO refresh_tokens (token_hash, user_id, expires_at, revoked, created_at) VALUES (?,?,?,0,?)",
-            (token_hash, user_id, expires_at, time.time()),
-        )
+        conn.execute(stmt, (token_hash, user_id, expires_at, now, sid, device))
     else:
         with _db() as c:
-            c.execute(
-                "INSERT INTO refresh_tokens (token_hash, user_id, expires_at, revoked, created_at) VALUES (?,?,?,0,?)",
-                (token_hash, user_id, expires_at, time.time()),
-            )
+            c.execute(stmt, (token_hash, user_id, expires_at, now, sid, device))
             c.commit()
     return raw_token
+
+
+def _issue_tokens_for_user(
+    user_id: int,
+    device: str = "desktop",
+    conn: Optional[sqlite3.Connection] = None,
+) -> tuple[str, str]:
+    sid = secrets.token_hex(16)
+    access_token = _issue_token(user_id, session_id=sid)
+    refresh_token = _issue_refresh_token(user_id, conn=conn, session_id=sid, device=device)
+    return access_token, refresh_token
 
 
 # ── Auth dependency ──────────────────────────────────────────────────────────
@@ -403,6 +435,18 @@ def get_current_user(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="Session expired, please sign in again")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid session token")
+
+    # Reject access JWTs issued for a revoked session
+    sid = payload.get("sid")
+    if sid:
+        with _db() as conn:
+            revoked_row = conn.execute(
+                "SELECT revoked FROM refresh_tokens WHERE session_id=? AND revoked=1",
+                (sid,),
+            ).fetchone()
+            if revoked_row:
+                raise HTTPException(status_code=401, detail="Session has been revoked")
+
     return _get_user_record(int(payload["sub"]))
 
 
@@ -416,6 +460,15 @@ def get_optional_user(request: Request) -> Optional[dict]:
         return None
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        sid = payload.get("sid")
+        if sid:
+            with _db() as conn:
+                revoked_row = conn.execute(
+                    "SELECT revoked FROM refresh_tokens WHERE session_id=? AND revoked=1",
+                    (sid,),
+                ).fetchone()
+                if revoked_row:
+                    return None
         return _get_user_record(int(payload["sub"]))
     except Exception:
         return None
@@ -428,7 +481,7 @@ _SELECTOR_COMMIT = keccak(text="commitVote(uint256,bytes32)")[:4]
 _SELECTOR_REVEAL = keccak(text="revealVote(uint256,uint8,bytes32)")[:4]
 
 
-def _rpc(method: str, params: list) -> any:
+def _rpc(method: str, params: list) -> Any:
     try:
         r = requests.post(
             RPC_URL,
@@ -584,13 +637,13 @@ def _send_otp_email(email: str, code: str) -> None:
     msg.attach(MIMEText(text_content, "plain"))
     msg.attach(MIMEText(html_content, "html"))
 
-    if int(port) == 465:
+    if port == 465:
         with smtplib.SMTP_SSL(host, 465, timeout=4) as server:
             if user and password:
                 server.login(user, password)
             server.sendmail(sender, [email], msg.as_string())
     else:
-        with smtplib.SMTP(host, int(port), timeout=4) as server:
+        with smtplib.SMTP(host, port, timeout=4) as server:
             server.ehlo()
             try:
                 server.starttls()
@@ -797,13 +850,13 @@ def _send_dispute_filed_email(
     msg.attach(MIMEText(html_content, "html"))
 
     try:
-        if int(port) == 465:
+        if port == 465:
             with smtplib.SMTP_SSL(host, 465, timeout=10) as server:
                 if user and password:
                     server.login(user, password)
                 server.sendmail(sender, [respondent_email], msg.as_string())
         else:
-            with smtplib.SMTP(host, int(port), timeout=10) as server:
+            with smtplib.SMTP(host, port, timeout=10) as server:
                 server.ehlo()
                 try:
                     server.starttls()
@@ -893,13 +946,13 @@ def _send_response_filed_email(
     msg.attach(MIMEText(html_content, "html"))
 
     try:
-        if int(port) == 465:
+        if port == 465:
             with smtplib.SMTP_SSL(host, 465, timeout=10) as server:
                 if user and password:
                     server.login(user, password)
                 server.sendmail(sender, [claimant_email], msg.as_string())
         else:
-            with smtplib.SMTP(host, int(port), timeout=10) as server:
+            with smtplib.SMTP(host, port, timeout=10) as server:
                 server.ehlo()
                 try:
                     server.starttls()
@@ -982,13 +1035,13 @@ def _send_case_created_claimant_email(
     msg.attach(MIMEText(html_content, "html"))
 
     try:
-        if int(port) == 465:
+        if port == 465:
             with smtplib.SMTP_SSL(host, 465, timeout=10) as server:
                 if user and password:
                     server.login(user, password)
                 server.sendmail(sender, [claimant_email], msg.as_string())
         else:
-            with smtplib.SMTP(host, int(port), timeout=10) as server:
+            with smtplib.SMTP(host, port, timeout=10) as server:
                 server.ehlo()
                 try:
                     server.starttls()
@@ -1031,7 +1084,7 @@ def otp_request(body: OtpRequestIn):
     code = f"{secrets.randbelow(1_000_000):06d}"
     code_hash = hashlib.sha256(code.encode()).hexdigest()
 
-    out = {"status": "OTP_SENT", "email": email}
+    out: Dict[str, Any] = {"status": "OTP_SENT", "email": email}
     sent = False
     if _smtp_configured():
         try:
@@ -1072,7 +1125,7 @@ def otp_request(body: OtpRequestIn):
 
 
 @router.post("/auth/otp/verify")
-def otp_verify(body: OtpVerifyIn):
+def otp_verify(body: OtpVerifyIn, request: Request):
     email = body.email.lower().strip()
     code_hash = hashlib.sha256(body.code.encode()).hexdigest()
     now = time.time()
@@ -1114,10 +1167,12 @@ def otp_verify(body: OtpVerifyIn):
             conn_update.execute("UPDATE users SET phone=? WHERE id=?", (body.phone.strip(), user_id))
     wallet = _provision_wallet(user_id)
     user = _get_user_record(user_id)
+    dev = "mobile" if "mobile" in request.headers.get("user-agent", "").lower() else "desktop"
+    access_token, refresh_token = _issue_tokens_for_user(user_id, device=dev)
     return {
         "status": "SUCCESS",
-        "token": _issue_token(user_id),
-        "refreshToken": _issue_refresh_token(user_id),
+        "token": access_token,
+        "refreshToken": refresh_token,
         "expiresIn": ACCESS_TOKEN_TTL_SECONDS,
         "user": user,
     }
@@ -1140,8 +1195,10 @@ def refresh_access_token(body: RefreshTokenIn):
         user_id = row["user_id"]
         # Rotate refresh token
         conn.execute("UPDATE refresh_tokens SET revoked=1 WHERE token_hash=?", (token_hash,))
-        new_access = _issue_token(user_id)
-        new_refresh = _issue_refresh_token(user_id, conn=conn)
+        dev = row["device"] if "device" in row.keys() and row["device"] else "desktop"
+        sid = secrets.token_hex(16)
+        new_access = _issue_token(user_id, session_id=sid)
+        new_refresh = _issue_refresh_token(user_id, conn=conn, session_id=sid, device=dev)
         conn.commit()
     user = _get_user_record(user_id)
     return {
@@ -1154,7 +1211,7 @@ def refresh_access_token(body: RefreshTokenIn):
 
 
 @router.post("/auth/google")
-def google_signin(body: GoogleIn):
+def google_signin(body: GoogleIn, request: Request):
     client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
     if not client_id:
         raise HTTPException(status_code=503, detail="Google sign-in not configured (GOOGLE_CLIENT_ID missing)")
@@ -1172,17 +1229,19 @@ def google_signin(body: GoogleIn):
     user_id = _find_or_create_user(name, email, google_id=info.get("sub"))
     wallet = _provision_wallet(user_id)
     user = _get_user_record(user_id)
+    dev = "mobile" if "mobile" in request.headers.get("user-agent", "").lower() else "desktop"
+    access_token, refresh_token = _issue_tokens_for_user(user_id, device=dev)
     return {
         "status": "SUCCESS",
-        "token": _issue_token(user_id),
-        "refreshToken": _issue_refresh_token(user_id),
+        "token": access_token,
+        "refreshToken": refresh_token,
         "expiresIn": ACCESS_TOKEN_TTL_SECONDS,
         "user": user,
     }
 
 
 @router.post("/auth/github")
-def github_signin(body: GitHubIn):
+def github_signin(body: GitHubIn, request: Request):
     """GitHub OAuth: exchange authorization code for access token, then fetch user profile."""
     gh_client_id = os.environ.get("GITHUB_CLIENT_ID", "")
     gh_client_secret = os.environ.get("GITHUB_CLIENT_SECRET", "")
@@ -1248,10 +1307,12 @@ def github_signin(body: GitHubIn):
     user_id = _find_or_create_user(name, email, github_id=github_id)
     wallet = _provision_wallet(user_id)
     user = _get_user_record(user_id)
+    dev = "mobile" if "mobile" in request.headers.get("user-agent", "").lower() else "desktop"
+    acc_tok, ref_tok = _issue_tokens_for_user(user_id, device=dev)
     return {
         "status": "SUCCESS",
-        "token": _issue_token(user_id),
-        "refreshToken": _issue_refresh_token(user_id),
+        "token": acc_tok,
+        "refreshToken": ref_tok,
         "expiresIn": ACCESS_TOKEN_TTL_SECONDS,
         "user": user,
     }
@@ -1299,7 +1360,7 @@ def get_wallet_nonce(address: str):
 
 
 @router.post("/auth/wallet/verify")
-def wallet_verify(body: WalletVerifyIn):
+def wallet_verify(body: WalletVerifyIn, request: Request):
     from eth_account.messages import encode_defunct
 
     addr = body.address.strip().lower()
@@ -1334,17 +1395,19 @@ def wallet_verify(body: WalletVerifyIn):
         conn.commit()
     wallet = _provision_wallet(user_id)
     user = _get_user_record(user_id)
+    dev = "mobile" if "mobile" in request.headers.get("user-agent", "").lower() else "desktop"
+    acc_tok, ref_tok = _issue_tokens_for_user(user_id, device=dev)
     return {
         "status": "SUCCESS",
-        "token": _issue_token(user_id),
-        "refreshToken": _issue_refresh_token(user_id),
+        "token": acc_tok,
+        "refreshToken": ref_tok,
         "expiresIn": ACCESS_TOKEN_TTL_SECONDS,
         "user": user,
     }
 
 
 @router.post("/auth/wallet")
-def wallet_signin(body: WalletIn):
+def wallet_signin(body: WalletIn, request: Request):
     is_prod = APP_ENV.lower() in ("production", "prod")
     if is_prod:
         raise HTTPException(
@@ -1360,10 +1423,12 @@ def wallet_signin(body: WalletIn):
         conn.commit()
     wallet = _provision_wallet(user_id)
     user = _get_user_record(user_id)
+    dev = "mobile" if "mobile" in request.headers.get("user-agent", "").lower() else "desktop"
+    acc_tok, ref_tok = _issue_tokens_for_user(user_id, device=dev)
     return {
         "status": "SUCCESS",
-        "token": _issue_token(user_id),
-        "refreshToken": _issue_refresh_token(user_id),
+        "token": acc_tok,
+        "refreshToken": ref_tok,
         "expiresIn": ACCESS_TOKEN_TTL_SECONDS,
         "user": user,
     }
@@ -1459,7 +1524,8 @@ def update_user_profile(body: ProfileUpdateIn, user: dict = Depends(get_current_
 
     updated = _get_user_record(user_id)
     if db_adapter and db_adapter.is_mongo_active():
-        db_adapter.update_profile_in_mongo(user_id, body.dict(exclude_unset=True))
+        dump_data = body.model_dump(exclude_unset=True) if hasattr(body, "model_dump") else body.dict(exclude_unset=True)
+        db_adapter.update_profile_in_mongo(user_id, dump_data)
     return {"status": "SUCCESS", "user": updated}
 
 
@@ -1614,9 +1680,9 @@ def evidence_verify(sha256: str, caseId: Optional[int] = None):
 
 # ── App-state sync (per-user persistence) ─────────────────────────────────────
 try:
-    from backend import state_store
-except ImportError:
     import state_store
+except ImportError:
+    from backend import state_store  # type: ignore[import-not-found]
 
 
 class StateIn(BaseModel):
@@ -1651,6 +1717,82 @@ def put_saved_state(body: StateIn, user: dict = Depends(get_current_user)):
     except ValueError as e:
         raise HTTPException(status_code=413, detail=str(e))
     return {"ok": True}
+
+
+@router.delete("/state")
+def delete_saved_state(user: dict = Depends(get_current_user)):
+    """Delete saved workspace state for this account."""
+    try:
+        state_store.delete_state(str(user["id"]))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to delete workspace state")
+    return {"ok": True, "message": "Saved state wiped successfully"}
+
+
+@router.post("/auth/sessions/revoke-mobile")
+def revoke_mobile_session(user: dict = Depends(get_current_user)):
+    """Invalidate active mobile sessions / refresh tokens on the server."""
+    user_id = user["id"]
+    with _db() as conn:
+        conn.execute(
+            "UPDATE refresh_tokens SET revoked=1 WHERE user_id=? AND (device='mobile' OR device='Mobile')",
+            (user_id,),
+        )
+        conn.commit()
+    return {"status": "SUCCESS", "message": "Mobile session revoked"}
+
+
+@router.post("/auth/sessions/revoke")
+def revoke_session(user: dict = Depends(get_current_user)):
+    """Invalidate active sessions / refresh tokens on the server."""
+    user_id = user["id"]
+    with _db() as conn:
+        conn.execute("UPDATE refresh_tokens SET revoked=1 WHERE user_id=?", (user_id,))
+        conn.commit()
+    return {"status": "SUCCESS", "message": "Sessions revoked"}
+
+
+@router.delete("/auth/account")
+@router.delete("/user/account")
+def delete_user_account(user: dict = Depends(get_current_user)):
+    """Delete authenticated user, associated workspace state, wallet records, and refresh tokens."""
+    user_id = user["id"]
+
+    # 1. Delete saved state before committing removal of user record so failure leaves account available for retry
+    try:
+        state_store.delete_state(str(user_id))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to delete workspace state")
+
+    # 2. SQLite user, wallet, and session records (atomic transaction)
+    with _db() as conn:
+        conn.execute("DELETE FROM refresh_tokens WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM wallets WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+        conn.commit()
+
+    # 3. MongoDB user deletion (treat exceptions and unsuccessful deletion as failures)
+    if db_adapter and db_adapter.is_mongo_active():
+        try:
+            mongo_db = db_adapter.get_db()
+            existing = mongo_db["users"].find_one({"$or": [{"userId": user_id}, {"id": user_id}, {"_id": user_id}]})
+            if existing:
+                del_res = mongo_db["users"].delete_one({"_id": existing["_id"]})
+                if del_res.deleted_count == 0:
+                    raise HTTPException(status_code=500, detail="Failed to delete user document from MongoDB database")
+                if mongo_db["users"].find_one({"_id": existing["_id"]}) is not None:
+                    raise HTTPException(status_code=500, detail="MongoDB user deletion verification failed")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=500, detail="Database error deleting user from MongoDB")
+
+    return {"status": "SUCCESS", "message": "Account, custodial wallet records, and workspace state deleted successfully"}
+
 
 
 class CounterClaimIn(BaseModel):
@@ -1811,10 +1953,11 @@ def create_new_dispute(
     # 3. Dispatch claimant confirmation email & SMS in background
     cl_email = claimant.get("email") or (user.get("email") if user else "") or ""
     if "@" in cl_email:
+        cl_name = str(claimant.get("name") or (user.get("name") if user else None) or "Claimant")
         background_tasks.add_task(
             _send_case_created_claimant_email,
             claimant_email=cl_email.strip(),
-            claimant_name=claimant.get("name") or (user.get("name") if user else "Claimant"),
+            claimant_name=cl_name,
             case_number=case_data.get("caseNumber") or case_data["id"],
             case_title=case_data.get("title") or "Dispute Filing",
             case_id=case_data["id"],

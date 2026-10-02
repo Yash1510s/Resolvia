@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Wallet,
@@ -29,6 +29,60 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
   const [linking, setLinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [remainingHours, setRemainingHours] = useState<number>(0);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const checkAndSchedule = () => {
+      if (typeof window === 'undefined') {
+        setRemainingHours(0);
+        return;
+      }
+      const sub = user?.email || user?.wallet || (user?.id ? String(user.id) : null);
+      const key = sub ? `resolvia_faucet_claim_${sub}` : 'resolvia_faucet_claim_anon';
+      const lastStr = window.localStorage.getItem(key);
+      if (!lastStr) {
+        setRemainingHours(0);
+        return;
+      }
+      const last = parseInt(lastStr, 10);
+      if (isNaN(last)) {
+        setRemainingHours(0);
+        return;
+      }
+      const elapsed = Date.now() - last;
+      const cooldownMs = 24 * 60 * 60 * 1000;
+      if (elapsed < cooldownMs) {
+        const remainingMs = cooldownMs - elapsed;
+        setRemainingHours(Math.max(1, Math.ceil(remainingMs / (60 * 60 * 1000))));
+        // Schedule component update when the cooldown expires while modal is open
+        const timer = setTimeout(() => {
+          setRemainingHours(0);
+        }, remainingMs + 50);
+        return timer;
+      } else {
+        setRemainingHours(0);
+      }
+    };
+
+    const timer = checkAndSchedule();
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [open, user, rslvBalance]);
+
+  const handleClaimFaucet = () => {
+    setError(null);
+    setSuccess(null);
+    const res = claimFaucet();
+    if (res.success) {
+      setSuccess(res.message);
+      setRemainingHours(24);
+    } else {
+      setError(res.message);
+    }
+  };
 
   if (!open) return null;
 
@@ -183,13 +237,22 @@ export function WalletModal({ open, onClose }: WalletModalProps) {
                 <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500">RSLV Token Balance</p>
                 <div className="flex items-center justify-between mt-0.5">
                   <span className="text-[14px] font-black text-violet-600 dark:text-violet-400">{rslvBalance} RSLV</span>
-                  <button
-                    onClick={claimFaucet}
-                    title="Claim 50 free RSLV testnet tokens"
-                    className="text-[10px] font-bold text-violet-700 dark:text-violet-300 hover:underline cursor-pointer"
-                  >
-                    +50 Faucet
-                  </button>
+                  {remainingHours > 0 ? (
+                    <span
+                      title={`Faucet cooldown active. Next claim in ~${remainingHours}h.`}
+                      className="text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded cursor-not-allowed"
+                    >
+                      Cooldown (~{remainingHours}h)
+                    </span>
+                  ) : (
+                    <button
+                      onClick={handleClaimFaucet}
+                      title="Claim 50 free RSLV testnet tokens (once every 24 hours)"
+                      className="text-[10px] font-bold text-violet-700 dark:text-violet-300 hover:underline cursor-pointer"
+                    >
+                      +50 Faucet
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">

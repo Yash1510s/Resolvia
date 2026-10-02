@@ -26,6 +26,7 @@ import {
   X,
   Sparkles,
   Lock,
+  Coins,
 } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import { useAuth } from '../lib/auth-context';
@@ -66,7 +67,7 @@ const SIDE_QUOTES: Record<string, string> = {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { identity, activeRole, setActiveRole, unreadCount, invitations, profilePrefs, rslvBalance, claimFaucet, isLoggedIn, logout: demoLogout } = useApp();
+  const { identity, activeRole, setActiveRole, unreadCount, invitations, profilePrefs, rslvBalance, isLoggedIn, logout: demoLogout } = useApp();
   const { user: authUser, loading: authLoading, logout: authLogout } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -319,12 +320,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           {/* RSLV balance */}
-          <div className="hidden md:flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 px-3 py-1.5 rounded-xl text-[11px] font-bold">
+          <button
+            type="button"
+            onClick={() => setWalletModalOpen(true)}
+            className="hidden md:flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100/80 dark:bg-emerald-950/40 dark:hover:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer shadow-2xs"
+            title="View RSLV balance and testnet wallet"
+          >
+            <Coins className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>{mounted ? rslvBalance.toFixed(0) : '100'} RSLV</span>
-            <button onClick={claimFaucet} className="bg-emerald-500 hover:bg-emerald-400 text-white w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black leading-none cursor-pointer" title="Claim testnet RSLV (faucet)">
-              +
-            </button>
-          </div>
+          </button>
 
           <Link href="/messages" className="relative w-9 h-9 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400 transition-colors" title="Messages">
             <Bell className="w-[18px] h-[18px]" />
@@ -340,7 +344,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={() => setWalletModalOpen(true)}
-              className="hidden sm:flex items-center gap-2 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700/80 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-1.5 pr-2.5 py-1.5 transition-all cursor-pointer shadow-2xs group"
+              className="flex items-center gap-1.5 sm:gap-2 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700/80 border border-slate-200 dark:border-slate-700/80 rounded-xl p-1.5 sm:pl-1.5 sm:pr-2.5 sm:py-1.5 transition-all cursor-pointer shadow-2xs group"
               title={
                 isMetaMaskLinked
                   ? `MetaMask Connected: ${activeWalletAddress}. Click to manage.`
@@ -356,7 +360,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <Wallet className="w-3.5 h-3.5" />
               </div>
-              <div className="leading-tight text-left">
+              <div className="hidden sm:block leading-tight text-left">
                 <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 font-mono group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
                   {walletShort}
                 </p>

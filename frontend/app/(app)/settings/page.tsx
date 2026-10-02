@@ -125,11 +125,94 @@ export default function SettingsPage() {
   }, [authUser]);
   const [savedFlash, setSavedFlash] = useState(false);
   const { theme, setTheme } = useTheme();
-  const [language, setLanguage] = useState('English (Default)');
-  const [twoFA, setTwoFA] = useState(true);
-  const [loginNotifs, setLoginNotifs] = useState(true);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [mobileRevoked, setMobileRevoked] = useState(false);
+  const [language, setLanguageState] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('resolvia_language') || 'English (Default)';
+    }
+    return 'English (Default)';
+  });
+  const setLanguage = (v: string) => {
+    setLanguageState(v);
+    if (typeof window !== 'undefined') localStorage.setItem('resolvia_language', v);
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2000);
+  };
+
+  const [twoFA, setTwoFAState] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const v = localStorage.getItem('resolvia_2fa_enabled');
+      return v !== null ? v === 'true' : true;
+    }
+    return true;
+  });
+  const setTwoFA = (v: boolean) => {
+    setTwoFAState(v);
+    if (typeof window !== 'undefined') localStorage.setItem('resolvia_2fa_enabled', String(v));
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2000);
+  };
+
+  const [loginNotifs, setLoginNotifsState] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const v = localStorage.getItem('resolvia_login_notifs');
+      return v !== null ? v === 'true' : true;
+    }
+    return true;
+  });
+  const setLoginNotifs = (v: boolean) => {
+    setLoginNotifsState(v);
+    if (typeof window !== 'undefined') localStorage.setItem('resolvia_login_notifs', String(v));
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2000);
+  };
+
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('resolvia_custom_avatar') || authUser?.avatarUrl || null;
+    }
+    return authUser?.avatarUrl || null;
+  });
+
+  const [mobileRevoked, setMobileRevokedState] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('resolvia_mobile_session_revoked') === 'true';
+    }
+    return false;
+  });
+  const [revokingMobile, setRevokingMobile] = useState<boolean>(false);
+  const setMobileRevoked = async (v: boolean) => {
+    if (!v) {
+      setMobileRevokedState(false);
+      if (typeof window !== 'undefined') localStorage.removeItem('resolvia_mobile_session_revoked');
+      return;
+    }
+    const token = typeof window !== 'undefined' ? localStorage.getItem('resolvia_token') : null;
+    if (!token) {
+      alert('Authentication required. Please sign in to revoke sessions.');
+      return;
+    }
+    setRevokingMobile(true);
+    try {
+      const res = await fetch('/api/backend/auth/sessions/revoke-mobile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}`);
+      }
+      // Only retain localStorage update and update displayed state after server-side revocation succeeds
+      setMobileRevokedState(true);
+      if (typeof window !== 'undefined') localStorage.setItem('resolvia_mobile_session_revoked', 'true');
+    } catch (err: any) {
+      alert(`Failed to revoke mobile session on server: ${err?.message || 'Network error'}. State unchanged.`);
+    } finally {
+      setRevokingMobile(false);
+    }
+  };
+
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -137,7 +220,15 @@ export default function SettingsPage() {
     if (file) {
       const reader = new FileReader();
       reader.onload = (ev) => {
-        setAvatarUrl(ev.target?.result as string);
+        const dataUrl = ev.target?.result as string;
+        setAvatarUrl(dataUrl);
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('resolvia_custom_avatar', dataUrl);
+          } catch {
+            /* storage quota note */
+          }
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -168,11 +259,36 @@ export default function SettingsPage() {
     URL.revokeObjectURL(url);
   };
 
-  const handleDeleteAccount = () => {
-    if (typeof window !== 'undefined' && window.confirm('Are you sure you want to delete your local profile and reset all session data? This cannot be undone.')) {
-      resetDemoData();
-      logout();
-      window.location.href = '/login';
+  const [deletingAccount, setDeletingAccount] = useState<boolean>(false);
+  const handleDeleteAccount = async () => {
+    if (
+      typeof window !== 'undefined' &&
+      window.confirm('Are you sure you want to delete your account, wallet records, and saved workspace data? This cannot be undone.')
+    ) {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('resolvia_token') : null;
+      if (!token) {
+        alert('Authentication required. Please sign in to delete your account.');
+        return;
+      }
+      setDeletingAccount(true);
+      try {
+        const acctRes = await fetch('/api/backend/auth/account', {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!acctRes.ok) {
+          const errData = await acctRes.json().catch(() => ({}));
+          throw new Error(errData?.detail || `Failed to delete account (HTTP ${acctRes.status})`);
+        }
+        // Only after account deletion succeeds:
+        resetDemoData();
+        logout();
+        window.location.href = '/login';
+      } catch (err: any) {
+        alert(`Account deletion failed: ${err?.message || 'Network error'}. You remain signed in so you can retry.`);
+      } finally {
+        setDeletingAccount(false);
+      }
     }
   };
 
@@ -183,10 +299,16 @@ export default function SettingsPage() {
       await updateProfile({
         name: trimmed || undefined,
         phone: phoneTrimmed || undefined,
+        avatarUrl: avatarUrl || undefined,
       });
-      if (typeof window !== 'undefined') {
-        if (trimmed) localStorage.setItem('resolvia_user_name', trimmed);
-        localStorage.setItem('resolvia_user_phone', phoneTrimmed);
+      try {
+        if (typeof window !== 'undefined') {
+          if (trimmed) localStorage.setItem('resolvia_user_name', trimmed);
+          localStorage.setItem('resolvia_user_phone', phoneTrimmed);
+          if (avatarUrl) localStorage.setItem('resolvia_custom_avatar', avatarUrl);
+        }
+      } catch {
+        /* browser storage full / private mode quota error ignored */
       }
     }
     setProfilePrefs({
@@ -207,7 +329,15 @@ export default function SettingsPage() {
         <p className="text-[13px] font-bold text-slate-900 dark:text-white">{label}</p>
         <p className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 mt-0.5">{sub}</p>
       </div>
-      <Toggle on={on} onChange={onChange} disabled={disabled} />
+      <Toggle
+        on={on}
+        onChange={(v) => {
+          onChange(v);
+          setSavedFlash(true);
+          setTimeout(() => setSavedFlash(false), 2000);
+        }}
+        disabled={disabled}
+      />
     </div>
   );
 
@@ -215,7 +345,14 @@ export default function SettingsPage() {
     <div>
       <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Settings</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Settings</h1>
+            {savedFlash && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold border border-emerald-200 dark:border-emerald-800 animate-fade-in shadow-xs">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> Saved
+              </span>
+            )}
+          </div>
           <p className="text-[13.5px] font-semibold text-slate-700 dark:text-slate-200 mt-1">Manage your account, preferences, and privacy settings.</p>
         </div>
         <div className="p-3.5 rounded-2xl bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-900/40 max-w-[260px]">
@@ -453,9 +590,10 @@ export default function SettingsPage() {
                       <button
                         type="button"
                         onClick={() => setMobileRevoked(true)}
-                        className="text-[11px] font-bold text-rose-500 hover:text-rose-600 cursor-pointer"
+                        disabled={revokingMobile}
+                        className="text-[11px] font-bold text-rose-500 hover:text-rose-600 cursor-pointer disabled:opacity-50"
                       >
-                        Revoke
+                        {revokingMobile ? 'Revoking…' : 'Revoke'}
                       </button>
                     )}
                   </div>
@@ -665,18 +803,32 @@ export default function SettingsPage() {
               </Card>
               <Card className="p-5">
                 <h2 className="text-[15px] font-black text-slate-900 dark:text-white mb-4">Data &amp; Account Actions</h2>
-                <button onClick={() => setSection('data')} className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-white/10 hover:border-violet-300 dark:hover:border-violet-500/40 transition-colors text-left cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDownload('Profile & reputation bundle');
+                    setSection('data');
+                  }}
+                  className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-white/10 hover:border-violet-300 dark:hover:border-violet-500/40 transition-colors text-left cursor-pointer"
+                >
                   <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center"><Download className="w-4 h-4" /></div>
                   <div className="flex-1">
                     <p className="text-[13px] font-bold text-slate-900 dark:text-white">Download My Data</p>
-                    <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Get a copy of your data</p>
+                    <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Download profile and open data export hub</p>
                   </div>
                 </button>
-                <button onClick={() => setSection('data')} className="w-full flex items-center gap-3 p-3.5 mt-3 rounded-xl border border-rose-200 dark:border-rose-900/40 bg-rose-50/50 dark:bg-rose-950/30 hover:border-rose-300 dark:hover:border-rose-700 transition-colors text-left cursor-pointer">
+                <button
+                  type="button"
+                  onClick={handleDeleteAccount}
+                  disabled={deletingAccount}
+                  className="w-full flex items-center gap-3 p-3.5 mt-3 rounded-xl border border-rose-200 dark:border-rose-900/40 bg-rose-50/50 dark:bg-rose-950/30 hover:border-rose-300 dark:hover:border-rose-700 transition-colors text-left cursor-pointer disabled:opacity-50"
+                >
                   <div className="w-9 h-9 rounded-lg bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 flex items-center justify-center"><Trash2 className="w-4 h-4" /></div>
                   <div className="flex-1">
-                    <p className="text-[13px] font-bold text-rose-600 dark:text-rose-400">Delete Account</p>
-                    <p className="text-[11px] font-medium text-rose-500 dark:text-rose-400">Permanently delete your account</p>
+                    <p className="text-[13px] font-bold text-rose-600 dark:text-rose-400">
+                      {deletingAccount ? 'Deleting Account…' : 'Delete Account'}
+                    </p>
+                    <p className="text-[11px] font-medium text-rose-500 dark:text-rose-400">Permanently delete your account and custodial wallet records</p>
                   </div>
                 </button>
               </Card>

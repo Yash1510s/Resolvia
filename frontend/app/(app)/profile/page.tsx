@@ -27,6 +27,7 @@ import {
   Sparkles,
   FileCheck,
   Scale,
+  Lock,
 } from 'lucide-react';
 import { useApp } from '../../lib/app-context';
 import { useAuth } from '../../lib/auth-context';
@@ -111,7 +112,9 @@ export default function ProfilePage() {
     { name: 'Active Juror', tone: 'from-violet-500 to-indigo-500', icon: <Shield className="w-5 h-5" />, unlocked: hasActiveJuror, req: 'Participate in at least 1 jury' },
     { name: 'Case Initiator', tone: 'from-orange-400 to-amber-500', icon: <FileText className="w-5 h-5" />, unlocked: hasFiledCase, req: 'File a dispute resolution case' },
     { name: 'Verified Member', tone: 'from-emerald-400 to-teal-500', icon: <Check className="w-5 h-5" />, unlocked: isVerified, req: 'Verify email or Web3 wallet' },
-    { name: 'Top Tier Juror', tone: 'from-amber-400 to-orange-500', icon: <Award className="w-5 h-5" />, unlocked: isTopTier, req: 'Reach 800+ reputation points' },
+    ...(profilePrefs.privacy.showReputation
+      ? [{ name: 'Top Tier Juror', tone: 'from-amber-400 to-orange-500', icon: <Award className="w-5 h-5" />, unlocked: isTopTier, req: 'Reach 800+ reputation points' }]
+      : []),
   ];
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
@@ -322,28 +325,41 @@ export default function ProfilePage() {
                     <span className="w-7 h-7 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center"><Shield className="w-4 h-4" /></span>
                     Reputation Overview
                   </h3>
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-2xl bg-violet-600 flex items-center justify-center shrink-0">
-                      <Star className="w-7 h-7 text-white" />
+                  {profilePrefs.privacy.showReputation ? (
+                    <>
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 rounded-2xl bg-violet-600 flex items-center justify-center shrink-0">
+                          <Star className="w-7 h-7 text-white" />
+                        </div>
+                        <div>
+                          <p className="text-[26px] font-black text-slate-900 leading-none">{rep}</p>
+                          <p className="text-[11px] font-semibold text-slate-400 mt-1">Reputation Score</p>
+                        </div>
+                        <div className="ml-auto text-right">
+                          <p className="text-[15px] font-black text-emerald-600">{jurorHistory.length ? '↑ +' + jurorHistory.reduce((s, h) => s + h.reputationDelta, 0) : 'Baseline'}</p>
+                          <p className="text-[10px] text-slate-400">{jurorHistory.length ? '(All-time delta)' : 'Novice Tier'}</p>
+                        </div>
+                      </div>
+                      <div className="mt-4">
+                        <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                          <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500" style={{ width: `${(rep / 1000) * 100}%` }} />
+                        </div>
+                        <div className="flex items-center justify-between mt-1.5">
+                          <span className="text-[10.5px] font-bold text-slate-500">{rep >= 800 ? 'Top 20% of users' : rep > 500 ? 'Active Contributor' : 'Novice Member'}</span>
+                          <span className="text-[10.5px] font-bold text-slate-400">{rep} / 1000</span>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="py-6 text-center">
+                      <div className="w-10 h-10 mx-auto rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center mb-2">
+                        <Lock className="w-5 h-5" />
+                      </div>
+                      <p className="text-[0.78125rem] font-bold text-slate-700">Reputation Score Hidden</p>
+                      <p className="text-[0.6875rem] text-slate-400 mt-0.5">You have hidden your reputation score in Privacy Settings.</p>
+                      <Link href="/settings" className="text-[0.6875rem] font-bold text-violet-600 hover:text-violet-700 mt-2 inline-block">Change in Settings →</Link>
                     </div>
-                    <div>
-                      <p className="text-[26px] font-black text-slate-900 leading-none">{rep}</p>
-                      <p className="text-[11px] font-semibold text-slate-400 mt-1">Reputation Score</p>
-                    </div>
-                    <div className="ml-auto text-right">
-                      <p className="text-[15px] font-black text-emerald-600">{jurorHistory.length ? '↑ +' + jurorHistory.reduce((s, h) => s + h.reputationDelta, 0) : 'Baseline'}</p>
-                      <p className="text-[10px] text-slate-400">{jurorHistory.length ? '(All-time delta)' : 'Novice Tier'}</p>
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                      <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500" style={{ width: `${(rep / 1000) * 100}%` }} />
-                    </div>
-                    <div className="flex items-center justify-between mt-1.5">
-                      <span className="text-[10.5px] font-bold text-slate-500">{rep >= 800 ? 'Top 20% of users' : rep > 500 ? 'Active Contributor' : 'Novice Member'}</span>
-                      <span className="text-[10.5px] font-bold text-slate-400">{rep} / 1000</span>
-                    </div>
-                  </div>
+                  )}
                 </Card>
                 <Card className="p-5">
                   <div className="flex items-center justify-between mb-4">
@@ -409,7 +425,9 @@ export default function ProfilePage() {
                       <div key={i} className="flex items-center gap-3">
                         <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${x.tone}`}>{x.icon}</div>
                         <p className="text-[12px] font-semibold text-slate-700 flex-1 min-w-0 truncate">{x.text}</p>
-                        <span className="text-[11px] font-black text-emerald-600 shrink-0">+{x.xp}</span>
+                        {profilePrefs.privacy.showReputation && (
+                          <span className="text-[11px] font-black text-emerald-600 shrink-0">+{x.xp}</span>
+                        )}
                         <span className="text-[10px] text-slate-400 shrink-0 w-20 text-right">{x.when}</span>
                       </div>
                     ))}
@@ -426,10 +444,19 @@ export default function ProfilePage() {
           {tab === 'activity' && (
             <Card className="p-5">
               <h3 className="text-[14px] font-black text-slate-900 mb-4">Activity Timeline</h3>
-              {myCases.length === 0 && jurorHistory.length === 0 ? (
+              {!profilePrefs.privacy.showHistory ? (
                 <div className="py-8 text-center text-slate-400">
-                  <p className="text-[13px] font-medium text-slate-600">No activity recorded yet</p>
-                  <p className="text-[11px] text-slate-400 mt-1">Your timeline will track dispute filings, evidence submissions, and jury decisions.</p>
+                  <div className="w-10 h-10 mx-auto rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center mb-2">
+                    <Lock className="w-5 h-5" />
+                  </div>
+                  <p className="text-[0.8125rem] font-bold text-slate-700">Activity History Hidden</p>
+                  <p className="text-[0.6875rem] text-slate-400 mt-1">Your public case activity and juror service timeline are set to private.</p>
+                  <Link href="/settings" className="text-[0.6875rem] font-bold text-violet-600 hover:text-violet-700 mt-2 inline-block">Change in Settings →</Link>
+                </div>
+              ) : myCases.length === 0 && jurorHistory.length === 0 ? (
+                <div className="py-8 text-center text-slate-400">
+                  <p className="text-[0.8125rem] font-medium text-slate-600">No activity recorded yet</p>
+                  <p className="text-[0.6875rem] text-slate-400 mt-1">Your timeline will track dispute filings, evidence submissions, and jury decisions.</p>
                 </div>
               ) : (
                 <ol className="relative border-l-2 border-slate-100 ml-2.5 space-y-5">
@@ -481,7 +508,9 @@ export default function ProfilePage() {
                   <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100">
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${x.tone}`}>{x.icon}</div>
                     <p className="text-[12.5px] font-semibold text-slate-700 flex-1">{x.text}</p>
-                    <span className="text-[12px] font-black text-emerald-600">+{x.xp} XP</span>
+                    {profilePrefs.privacy.showReputation && (
+                      <span className="text-[12px] font-black text-emerald-600">+{x.xp} XP</span>
+                    )}
                     <span className="text-[10.5px] text-slate-400 w-20 text-right">{x.when}</span>
                   </div>
                 ))}

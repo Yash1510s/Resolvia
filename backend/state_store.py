@@ -575,6 +575,26 @@ def save_state(
     return now
 
 
+def delete_state(sub: str) -> bool:
+    """Delete saved user state from SQLite and MongoDB."""
+    with _lock:
+        c = _conn()
+        try:
+            c.execute("DELETE FROM user_state WHERE sub = ?", (sub,))
+            c.commit()
+        finally:
+            c.close()
+    if is_mongo_active():
+        try:
+            from backend.db_adapter import get_mongo_db
+            db = get_mongo_db()
+            if db:
+                db["user_states"].delete_one({"sub": sub})
+        except Exception:
+            pass
+    return True
+
+
 def load_state(
     sub: str,
     user_wallet: Optional[str] = None,
