@@ -800,8 +800,8 @@ def _send_dispute_filed_email(
 
     host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
     port = int(os.environ.get("SMTP_PORT", "587"))
-    user = os.environ.get("SMTP_USER", "ysevil1212@gmail.com").strip()
-    password = os.environ.get("SMTP_PASS", "uhfy uopi qqsu bsfm").replace(" ", "").strip()
+    user = os.environ.get("SMTP_USER", "").strip()
+    password = os.environ.get("SMTP_PASS", "").replace(" ", "").strip()
     sender = os.environ.get("SMTP_FROM", f"Resolvia Protocol <{user}>")
 
     msg = MIMEMultipart("alternative")
@@ -919,8 +919,8 @@ def _send_response_filed_email(
 
     host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
     port = int(os.environ.get("SMTP_PORT", "587"))
-    user = os.environ.get("SMTP_USER", "ysevil1212@gmail.com").strip()
-    password = os.environ.get("SMTP_PASS", "uhfy uopi qqsu bsfm").replace(" ", "").strip()
+    user = os.environ.get("SMTP_USER", "").strip()
+    password = os.environ.get("SMTP_PASS", "").replace(" ", "").strip()
     sender = os.environ.get("SMTP_FROM", f"Resolvia Protocol <{user}>")
 
     msg = MIMEMultipart("alternative")
@@ -1013,8 +1013,8 @@ def _send_case_created_claimant_email(
 
     host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
     port = int(os.environ.get("SMTP_PORT", "587"))
-    user = os.environ.get("SMTP_USER", "ysevil1212@gmail.com").strip()
-    password = os.environ.get("SMTP_PASS", "uhfy uopi qqsu bsfm").replace(" ", "").strip()
+    user = os.environ.get("SMTP_USER", "").strip()
+    password = os.environ.get("SMTP_PASS", "").replace(" ", "").strip()
     sender = os.environ.get("SMTP_FROM", f"Resolvia Protocol <{user}>")
 
     msg = MIMEMultipart("alternative")

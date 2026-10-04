@@ -10,6 +10,7 @@ services:
     region: oregon
     healthCheckPath: /health
     envVars:
+      # ── Non-sensitive config (safe to commit) ──
       - key: APP_ENV
         value: prod
       - key: ALLOWED_ORIGINS
@@ -24,16 +25,17 @@ services:
         value: smtp.gmail.com
       - key: SMTP_PORT
         value: "587"
+      # ── Secrets (set these in Render Dashboard → Environment) ──
       - key: SMTP_USER
-        value: ysevil1212@gmail.com
+        sync: false
       - key: SMTP_PASS
-        value: "uhfy uopi qqsu bsfm"
+        sync: false
       - key: SMTP_FROM
-        value: "Resolvia Protocol <ysevil1212@gmail.com>"
+        sync: false
       - key: MONGODB_URI
-        value: "mongodb+srv://ysevil1212_db_user:qRNQGlAsaZWGmws9@resolvia.mj1cdnr.mongodb.net/resolvia?retryWrites=true&w=majority&appName=Resolvia"
+        sync: false
       - key: MONGODB_DB_NAME
-        value: "resolvia"
+        sync: false
 
 
   # ─── Next.js 16 Frontend ───
@@ -54,9 +56,10 @@ services:
         value: "11155111"
       - key: NEXT_PUBLIC_RPC_URL
         value: https://ethereum-sepolia-rpc.publicnode.com
+      # ── Set these in Render Dashboard → Environment ──
       - key: NEXT_PUBLIC_GOOGLE_CLIENT_ID
-        value: 538051232460-ivt400142se1n83599tlmjag2ftriaej.apps.googleusercontent.com
+        sync: false
       - key: NEXT_PUBLIC_GITHUB_CLIENT_ID
-        value: Ov23liGL2GL7JiMfD1kK
+        sync: false
       - key: RESOLVIA_BACKEND_URL
         value: https://resolvia-3yau.onrender.com
