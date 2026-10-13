@@ -184,7 +184,7 @@ export function VerificationPortal({ cases }: VerificationPortalProps) {
           <button
             onClick={handleVerify}
             disabled={verifying}
-            className="px-6 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all cursor-pointer shadow-md disabled:opacity-50 flex items-center justify-center gap-2"
+            className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all cursor-pointer shadow-md disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {verifying ? (
               <RefreshCw className="w-4 h-4 animate-spin" />

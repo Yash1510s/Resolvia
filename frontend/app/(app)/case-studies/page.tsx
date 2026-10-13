@@ -115,8 +115,8 @@ export default function CaseStudiesPage() {
             Explore live proceedings and closed precedents from the Resolvia community. Publicly transparent, cryptographically audited, and jury reviewed.
           </p>
         </div>
-        <div className="p-4 rounded-2xl bg-violet-50 border border-violet-100 max-w-xs shadow-sm">
-          <p className="italic text-[12px] text-slate-600 leading-relaxed">&ldquo;Every dispute is transparent. Every resolution builds an immutable precedent.&rdquo;</p>
+        <div className="p-4 rounded-2xl bg-blue-50 border border-blue-100 max-w-xs shadow-sm">
+          <p className="italic text-[12px] text-blue-600 leading-relaxed">&ldquo;Every dispute is transparent. Every resolution builds an immutable precedent.&rdquo;</p>
           <p className="text-[10px] text-slate-400 mt-1.5">— Resolvia Protocol</p>
         </div>
       </div>
@@ -309,7 +309,7 @@ export default function CaseStudiesPage() {
 
               {/* Action Button */}
               <div className="md:text-right">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-violet-200 bg-violet-50 text-violet-700 text-[11px] font-bold group-hover:bg-violet-600 group-hover:text-white transition-colors">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-[11px] font-bold group-hover:bg-blue-600 group-hover:text-white transition-colors">
                   {closed ? 'Study' : 'View'} <ArrowRight className="w-3 h-3" />
                 </span>
               </div>
@@ -326,7 +326,7 @@ export default function CaseStudiesPage() {
       </div>
 
       <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-start gap-3">
-        <Scale className="w-4 h-4 text-violet-500 shrink-0 mt-0.5" />
+        <Scale className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
         <p className="text-[11.5px] text-slate-500 leading-relaxed">
           <strong className="text-slate-700">Public Protocol Transparency:</strong> Every dispute created on Resolvia generates a transparent public record with mapped claimant and respondent details. Closed cases produce anonymised precedents and forensic audit records.
         </p>

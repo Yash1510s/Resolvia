@@ -8,7 +8,7 @@ import { LiveExampleModal } from '../components/LiveExampleModal';
 import { useAuth } from '../lib/auth-context';
 
 const STEPS = [
-  { icon: <FilePlus className="w-5 h-5" />, t: 'Create a Case', s: 'Submit your dispute with details and anchored evidence.' },
+  { icon: <FilePlus className="w-5 h-5 " />, t: 'Create a Case', s: 'Submit your dispute with details and anchored evidence.' },
   { icon: <Sparkles className="w-5 h-5" />, t: 'AI Analysis', s: 'AI analyzes the evidence and provides an initial, non-binding assessment.' },
   { icon: <Users className="w-5 h-5" />, t: 'Jury Deliberation', s: 'A decentralized jury reviews the case and casts their votes.' },
   { icon: <Gavel className="w-5 h-5" />, t: 'Final Verdict', s: 'Get a transparent decision with detailed reasoning.' },
@@ -23,7 +23,7 @@ export default function HowItWorksPage() {
     <div className="min-h-screen bg-[#f6f7fb] dark:bg-slate-950 transition-colors">
       <PublicNav active="how-it-works" />
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
-        <Link href="/" className="inline-flex items-center gap-1.5 text-[12px] font-bold text-violet-600 dark:text-violet-400 hover:text-violet-700">
+        <Link href="/" className="inline-flex items-center gap-1.5 text-[12px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700">
           <ArrowLeft className="w-3.5 h-3.5" /> Home
         </Link>
 
@@ -38,7 +38,7 @@ export default function HowItWorksPage() {
             <div key={s.t} className="relative">
               <div className="p-4 rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-white/10 h-full text-center shadow-xs">
                 <div className="relative inline-flex">
-                  <div className="w-10 h-10 rounded-xl bg-violet-600 text-white flex items-center justify-center shadow-md shadow-violet-200 dark:shadow-none">{s.icon}</div>
+                  <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-200 dark:shadow-none">{s.icon}</div>
                   <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-[9px] font-black flex items-center justify-center">{i + 1}</span>
                 </div>
                 <p className="text-[12.5px] font-black text-slate-800 dark:text-slate-100 mt-3">{s.t}</p>
@@ -53,7 +53,7 @@ export default function HowItWorksPage() {
           <button
             type="button"
             onClick={() => setDemoOpen(true)}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all shadow-md shadow-violet-600/25 cursor-pointer active:scale-95"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-md shadow-blue-600/25 cursor-pointer active:scale-95"
           >
             <Play className="w-4 h-4 fill-current" /> See a Live Example
           </button>
@@ -70,7 +70,7 @@ export default function HowItWorksPage() {
               { icon: <Scale className="w-5 h-5" />, t: 'For a Fairer Tomorrow', s: 'Justice for all — fair process regardless of scale or status.' },
             ].map((x) => (
               <div key={x.t} className="p-5 rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-white/10 text-center shadow-xs">
-                <div className="w-11 h-11 mx-auto rounded-xl bg-violet-50 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400 flex items-center justify-center">{x.icon}</div>
+                <div className="w-11 h-11 mx-auto rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">{x.icon}</div>
                 <p className="text-[13px] font-black text-slate-800 dark:text-slate-100 mt-3">{x.t}</p>
                 <p className="text-[10.5px] text-slate-400 dark:text-slate-400 mt-1.5 leading-snug">{x.s}</p>
               </div>

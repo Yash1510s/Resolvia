@@ -161,11 +161,11 @@ function SignupInner() {
     <Split
       brand={
         <div>
-          <h1 className="text-4xl sm:text-5xl font-black text-white leading-[1.15] tracking-tight">
+          <h1 className="text-4xl sm:text-5xl font-black text-slate-900 leading-[1.15] tracking-tight">
             Join a Fairer
-            <span className="block text-violet-400">Tomorrow.</span>
+            <span className="block text-blue-600">Tomorrow.</span>
           </h1>
-          <p className="text-slate-400 text-[13px] mt-4 leading-relaxed max-w-sm">
+          <p className="text-slate-600 text-[13px] mt-4 leading-relaxed max-w-sm">
             Create your account and be a part of a trusted community for transparent and unbiased dispute resolution.
           </p>
           <BrandBullets
@@ -206,7 +206,7 @@ function SignupInner() {
                   value={name}
                   onChange={(e) => { setName(e.target.value); setDisplayName((d) => d || e.target.value); }}
                   placeholder="Yash Vijay Singh"
-                  className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-[13px] font-semibold text-slate-900 placeholder:text-slate-400"
+                  className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-[13px] font-semibold text-slate-900 placeholder:text-slate-400"
                 />
               </div>
               <div>
@@ -218,7 +218,7 @@ function SignupInner() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-[13px] font-semibold text-slate-900 placeholder:text-slate-400"
+                  className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-[13px] font-semibold text-slate-900 placeholder:text-slate-400"
                 />
               </div>
               <label className="flex items-start gap-2.5 cursor-pointer">
@@ -226,12 +226,12 @@ function SignupInner() {
                   type="checkbox"
                   checked={terms}
                   onChange={(e) => setTerms(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded accent-violet-600"
+                  className="mt-0.5 w-4 h-4 rounded accent-blue-600"
                 />
                 <span className="text-[11px] text-slate-500 leading-relaxed">
                   I agree to the{' '}
-                  <span className="font-bold text-violet-600">Terms of Service</span> and{' '}
-                  <span className="font-bold text-violet-600">Privacy Policy</span>.
+                  <span className="font-bold text-blue-600">Terms of Service</span> and{' '}
+                  <span className="font-bold text-blue-600">Privacy Policy</span>.
                 </span>
               </label>
               {error && <p className="text-[11px] font-bold text-rose-600">{error}</p>}
@@ -241,7 +241,7 @@ function SignupInner() {
               <SocialRow googleRef={googleRef} googleReady={googleReady} googleEnabled={googleEnabled} githubEnabled={githubEnabled} onGithubClick={githubRedirect} />
               <p className="text-[11px] text-slate-500 text-center pt-1">
                 Already have an account?{' '}
-                <Link href="/login" className="font-black text-violet-600 hover:text-violet-700">
+                <Link href="/login" className="font-black text-blue-600 hover:text-blue-700">
                   Log in
                 </Link>
               </p>
@@ -259,14 +259,14 @@ function SignupInner() {
                       key={r.id}
                       onClick={() => setRoleType(r.id)}
                       className={`text-left p-4 rounded-2xl border-2 transition-all cursor-pointer ${
-                        active ? 'border-violet-500 bg-violet-50/60 shadow-sm' : 'border-slate-200 hover:border-slate-300 bg-white'
+                        active ? 'border-blue-500 bg-blue-50/60 shadow-sm' : 'border-slate-200 hover:border-slate-300 bg-white'
                       }`}
                     >
                       <div className="flex items-start justify-between">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${active ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${active ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
                           {r.icon}
                         </div>
-                        {active && <Check className="w-4 h-4 text-violet-600" />}
+                        {active && <Check className="w-4 h-4 text-blue-600" />}
                       </div>
                       <p className="text-[13px] font-black text-slate-900 mt-2.5">{r.title}</p>
                       <p className="text-[10.5px] text-slate-500 mt-1 leading-relaxed">{r.sub}</p>
@@ -288,7 +288,7 @@ function SignupInner() {
             <div className="space-y-4">
               <div className="flex items-center gap-4">
                 <div className="relative">
-                  <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xl font-black">
+                  <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xl font-black">
                     {photo ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={photo} alt="avatar" className="w-16 h-16 rounded-full object-cover" />
@@ -296,7 +296,7 @@ function SignupInner() {
                       (displayName || name || '?').charAt(0).toUpperCase()
                     )}
                   </div>
-                  <label className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-violet-600 hover:bg-violet-500 text-white flex items-center justify-center border-2 border-white cursor-pointer" title="Upload Photo (Optional, max 2MB)">
+                  <label className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center border-2 border-white cursor-pointer" title="Upload Photo (Optional, max 2MB)">
                     <Camera className="w-3.5 h-3.5" />
                     <input
                       type="file"
@@ -317,7 +317,7 @@ function SignupInner() {
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   placeholder={name}
-                  className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-[13px] font-semibold text-slate-900 placeholder:text-slate-400"
+                  className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-[13px] font-semibold text-slate-900 placeholder:text-slate-400"
                 />
               </div>
               <div>
@@ -326,7 +326,7 @@ function SignupInner() {
                   value={institution}
                   onChange={(e) => setInstitution(e.target.value)}
                   placeholder="Xavier Institute of Engineering"
-                  className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-[13px] font-semibold text-slate-900 placeholder:text-slate-400"
+                  className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-[13px] font-semibold text-slate-900 placeholder:text-slate-400"
                 />
               </div>
               <div>
@@ -339,7 +339,7 @@ function SignupInner() {
                   onChange={(e) => setBio(e.target.value.slice(0, 350))}
                   rows={3}
                   placeholder="Computer Science Student | Interested in Technology, Law and Social Impact."
-                  className="w-full px-3.5 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none resize-none transition-all"
+                  className="w-full px-3.5 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none resize-none transition-all"
                 />
               </div>
               <div className="flex items-center justify-between pt-1">
@@ -365,7 +365,7 @@ function SignupInner() {
                 <button
                   onClick={sendCode}
                   disabled={resendIn > 0 || busy}
-                  className="flex items-center gap-1.5 text-[11px] font-bold text-violet-600 hover:text-violet-700 disabled:text-slate-300 cursor-pointer"
+                  className="flex items-center gap-1.5 text-[11px] font-bold text-blue-600 hover:text-blue-700 disabled:text-slate-300 cursor-pointer"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
                   {resendIn > 0 ? `Resend in 00:${String(resendIn).padStart(2, '0')}` : 'Resend code'}

@@ -82,7 +82,7 @@ function GitHubCallbackInner() {
           {/* Logo */}
           <div className="flex items-center justify-center gap-2.5 mb-2">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-violet-500 to-indigo-600 flex items-center justify-center shadow-md">
-              <Scale className="w-6 h-6 text-white" />
+              <img src="/logo.png" alt="Resolvia Logo" className="w-7 h-7 object-contain" />
             </div>
             <span className="text-lg font-black text-slate-900">Resolvia</span>
           </div>

@@ -10,7 +10,7 @@ export default function AboutPage() {
     <div className="min-h-screen bg-white">
       <PublicNav active="about" />
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
-        <Link href="/" className="inline-flex items-center gap-1.5 text-[12px] font-bold text-violet-600 hover:text-violet-700">
+        <Link href="/" className="inline-flex items-center gap-1.5 text-[12px] font-bold text-blue-600 hover:text-blue-700">
           <ArrowLeft className="w-3.5 h-3.5" /> Home
         </Link>
 
@@ -32,7 +32,7 @@ export default function AboutPage() {
                 { icon: <A11y className="w-5 h-5" />, t: 'Accessibility', s: 'For everyone' },
               ].map((x) => (
                 <div key={x.t} className="text-center">
-                  <div className="w-12 h-12 mx-auto rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center">{x.icon}</div>
+                  <div className="w-12 h-12 mx-auto rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">{x.icon}</div>
                   <p className="text-[13px] font-black text-slate-800 mt-2.5">{x.t}</p>
                   <p className="text-[10.5px] text-slate-400 mt-0.5">{x.s}</p>
                 </div>
@@ -41,7 +41,7 @@ export default function AboutPage() {
 
             <div className="grid md:grid-cols-2 gap-5 mt-9">
               <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100">
-                <h3 className="text-[14px] font-black text-slate-900 flex items-center gap-2"><Target className="w-4 h-4 text-violet-600" /> Our Vision</h3>
+                <h3 className="text-[14px] font-black text-slate-900 flex items-center gap-2"><Target className="w-4 h-4 text-blue-600" /> Our Vision</h3>
                 <p className="text-[12.5px] text-slate-500 mt-2.5 leading-relaxed italic">
                   "A world where every dispute can be resolved fairly, transparently, and without fear or bias."
                 </p>
@@ -55,12 +55,12 @@ export default function AboutPage() {
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-violet-50/60 border border-violet-100 mt-5">
+            <div className="p-5 rounded-2xl bg-blue-50/60 border border-blue-100 mt-5">
               <h3 className="text-[14px] font-black text-slate-900 mb-3">Why Resolvia?</h3>
               <ul className="grid sm:grid-cols-2 gap-2.5">
                 {['Accessible justice', 'Lower cost than court', 'Evidence-driven outcomes', 'Community-driven resolution', 'Verifiable records', 'Human-centric approach'].map((t) => (
                   <li key={t} className="flex items-center gap-2.5 text-[12.5px] font-semibold text-slate-600">
-                    <span className="w-5 h-5 rounded-md bg-white border border-violet-200 text-violet-600 flex items-center justify-center shrink-0">
+                    <span className="w-5 h-5 rounded-md bg-white border border-blue-200 text-blue-600 flex items-center justify-center shrink-0">
                       <Sparkles className="w-3 h-3" />
                     </span>
                     {t}
@@ -81,8 +81,8 @@ export default function AboutPage() {
               { t: 'Case Studies', s: 'Real closed cases, three disclosure levels', href: '/case-studies' },
               { t: 'Resources', s: 'Guides, templates and references', href: '/resources' },
             ].map((x) => (
-              <Link key={x.t} href={x.href} className="block p-5 rounded-2xl bg-white border border-slate-200 hover:border-violet-300 transition-colors group">
-                <p className="text-[13px] font-black text-slate-800 group-hover:text-violet-700 transition-colors">{x.t}</p>
+              <Link key={x.t} href={x.href} className="block p-5 rounded-2xl bg-white border border-slate-200 hover:border-blue-300 transition-colors group">
+                <p className="text-[13px] font-black text-slate-800 group-hover:text-blue-700 transition-colors">{x.t}</p>
                 <p className="text-[11px] text-slate-400 mt-1">{x.s}</p>
               </Link>
             ))}

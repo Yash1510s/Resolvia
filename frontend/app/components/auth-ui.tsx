@@ -60,27 +60,27 @@ export function AuthLayout({
   backLabel?: string;
 }) {
   return (
-    <div className="min-h-screen bg-[#0b132b] flex flex-col relative overflow-hidden">
-      {/* Ambient glows + watermark */}
+    <div className="min-h-screen bg-slate-50 flex flex-col relative overflow-hidden">
+      {/* Ambient soft glows */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-40 -right-40 w-[480px] h-[480px] bg-violet-600/10 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-0 -left-40 w-[480px] h-[480px] bg-blue-600/10 rounded-full blur-3xl"></div>
-        <Scale className="absolute -bottom-20 -left-12 w-[420px] h-[420px] text-white/[0.04]" />
+        <div className="absolute -top-40 -right-40 w-[480px] h-[480px] bg-blue-100/60 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-0 -left-40 w-[480px] h-[480px] bg-indigo-100/50 rounded-full blur-3xl"></div>
+        <Scale className="absolute -bottom-20 -left-12 w-[420px] h-[420px] text-slate-200/40" />
       </div>
 
-      <header className="relative z-10 w-full px-5 sm:px-8 h-16 flex items-center justify-between">
+      <header className="relative z-10 w-full px-5 sm:px-8 h-16 flex items-center justify-between border-b border-slate-200/80 bg-white/80 backdrop-blur-sm">
         <Link href={back} className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-violet-500 to-indigo-600 flex items-center justify-center shadow-md">
-            <Scale className="w-5 h-5 text-white" />
+          <div className="w-9 h-9 rounded-xl overflow-hidden bg-white border border-slate-200/80 flex items-center justify-center shadow-sm">
+            <img src="/logo.png" alt="Resolvia Logo" className="w-7 h-7 object-contain" />
           </div>
           <div>
-            <p className="text-[15px] font-black tracking-tight text-white leading-none">Resolvia</p>
-            <p className="text-[8.5px] text-slate-500 mt-0.5">People. Evidence. Fair Resolution.</p>
+            <p className="text-[15px] font-black tracking-tight text-slate-900 leading-none">Resolvia</p>
+            <p className="text-[8.5px] text-slate-400 mt-0.5">People. Evidence. Fair Resolution.</p>
           </div>
         </Link>
         <Link
           href={back}
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-bold transition-all"
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold transition-all shadow-xs"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           {backLabel}
@@ -91,9 +91,9 @@ export function AuthLayout({
         <AuthErrorBoundary>{children}</AuthErrorBoundary>
       </main>
 
-      <footer className="relative z-10 px-5 sm:px-8 py-5 border-t border-white/5 flex items-center justify-between">
-        <p className="text-[10px] text-slate-600">AI output on Resolvia is advisory and non-binding. Verdicts are rendered by the human jury.</p>
-        <p className="text-[10px] text-slate-600 hidden sm:block">Secure Access. Trusted Identities. A Fairer Tomorrow.</p>
+      <footer className="relative z-10 px-5 sm:px-8 py-5 border-t border-slate-200 bg-white/60 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <p className="text-[10px] text-slate-500">AI output on Resolvia is advisory and non-binding. Verdicts are rendered by the human jury.</p>
+        <p className="text-[10px] text-slate-500 hidden sm:block">Secure Access. Trusted Identities. A Fairer Tomorrow.</p>
       </footer>
     </div>
   );
@@ -106,12 +106,12 @@ export function BrandBullets({ items }: { items: { icon: React.ReactNode; title:
     <div className="space-y-5 mt-7">
       {items.map((x) => (
         <div key={x.title} className="flex items-start gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 text-violet-300 flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0">
             {x.icon}
           </div>
           <div>
-            <p className="text-[13px] font-bold text-white">{x.title}</p>
-            <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">{x.sub}</p>
+            <p className="text-[13px] font-bold text-slate-800">{x.title}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{x.sub}</p>
           </div>
         </div>
       ))}
@@ -122,8 +122,8 @@ export function BrandBullets({ items }: { items: { icon: React.ReactNode; title:
 export function BrandQuote({ quote, by = '— Resolvia' }: { quote: string; by?: string }) {
   return (
     <div className="mt-10 max-w-xs">
-      <p className="italic text-slate-400 text-[13px] leading-relaxed">&ldquo;{quote}&rdquo;</p>
-      <p className="text-[10px] text-slate-500 mt-1.5">{by}</p>
+      <p className="italic text-slate-500 text-[13px] leading-relaxed">&ldquo;{quote}&rdquo;</p>
+      <p className="text-[10px] text-slate-400 mt-1.5">{by}</p>
     </div>
   );
 }
@@ -212,7 +212,7 @@ export function OtpBoxes({ value, onChange, disabled }: { value: string; onChang
           }}
           inputMode="numeric"
           aria-label={`Digit ${i + 1}`}
-          className="w-11 sm:w-12 h-14 rounded-xl border-2 border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-center text-xl font-black text-slate-900 disabled:opacity-50"
+          className="w-11 sm:w-12 h-14 rounded-xl border-2 border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-center text-xl font-black text-slate-900 disabled:opacity-50"
         />
       ))}
     </div>
@@ -396,7 +396,7 @@ export function BtnPrimary({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className="w-full px-5 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[13px] font-black transition-all shadow-lg shadow-violet-600/20 flex items-center justify-center gap-2 cursor-pointer"
+      className="w-full px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[13px] font-black transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 cursor-pointer"
     >
       {children}
     </button>

@@ -167,7 +167,7 @@ function LoginInner() {
         </div>
         <button
           onClick={() => router.push('/dashboard')}
-          className="w-full py-3.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black transition-all shadow-lg shadow-violet-900/30 cursor-pointer"
+          className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black transition-all shadow-lg shadow-blue-900/30 cursor-pointer"
         >
           Go to Dashboard Now →
         </button>
@@ -179,9 +179,9 @@ function LoginInner() {
     <Split
       brand={
         <div>
-          <h1 className="text-4xl sm:text-5xl font-black text-white leading-[1.15] tracking-tight">
+          <h1 className="text-4xl sm:text-5xl font-black text-slate-900 leading-[1.15] tracking-tight">
             Welcome Back.
-            <span className="block text-violet-400">Let&apos;s Resolve Together.</span>
+            <span className="block text-blue-600">Let&apos;s Resolve Together.</span>
           </h1>
           <BrandBullets
             items={[
@@ -204,7 +204,7 @@ function LoginInner() {
             type="button"
             onClick={() => { setMethod('email'); setError(null); }}
             className={`flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              method === 'email' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+              method === 'email' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
             }`}
           >
             <Mail className="w-3.5 h-3.5" />
@@ -214,7 +214,7 @@ function LoginInner() {
             type="button"
             onClick={() => { setMethod('wallet'); setError(null); }}
             className={`flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              method === 'wallet' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+              method === 'wallet' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
             }`}
           >
             <Wallet className="w-3.5 h-3.5" />
@@ -254,7 +254,7 @@ function LoginInner() {
             <button
               onClick={connectMetaMask}
               disabled={busy}
-              className="w-full py-3.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black transition-all shadow-lg shadow-violet-900/30 cursor-pointer flex items-center justify-center gap-2"
+              className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black transition-all shadow-lg shadow-blue-900/30 cursor-pointer flex items-center justify-center gap-2"
             >
               <span>{busy ? 'Connecting…' : 'Connect MetaMask'}</span>
               <ExternalLink className="w-3.5 h-3.5" />
@@ -301,7 +301,7 @@ function LoginInner() {
                 onChange={(e) => setEmail(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && sendCode()}
                 placeholder="you@example.com"
-                className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-[13px] font-semibold text-slate-900 placeholder:text-slate-400"
+                className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-[13px] font-semibold text-slate-900 placeholder:text-slate-400"
               />
             </div>
 
@@ -317,13 +317,13 @@ function LoginInner() {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="+91 98765 43210"
-                className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none text-[13px] font-semibold text-slate-900 placeholder:text-slate-400"
+                className="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-[13px] font-semibold text-slate-900 placeholder:text-slate-400"
               />
             </div>
 
-            <div className="p-3 rounded-xl bg-violet-50/70 border border-violet-100 flex items-start gap-2.5">
-              <KeyRound className="w-4 h-4 text-violet-600 shrink-0 mt-0.5" />
-              <p className="text-[10.5px] text-violet-800 leading-relaxed">
+            <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-100 flex items-start gap-2.5">
+              <KeyRound className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+              <p className="text-[10.5px] text-blue-800 leading-relaxed">
                 We verify it&apos;s you with a one-time 6-digit code (valid for 5 minutes). No passwords needed.
               </p>
             </div>
@@ -338,8 +338,8 @@ function LoginInner() {
 
             <p className="text-[11px] text-slate-500 text-center pt-1">
               Don&apos;t have an account?{' '}
-              <Link href="/signup" className="font-black text-violet-600 hover:text-violet-700">
-                Sign Up
+              <Link href="/signup" className="font-black text-blue-600 hover:text-blue-700">
+                Sign up
               </Link>
             </p>
           </div>

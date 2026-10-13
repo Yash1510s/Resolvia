@@ -119,7 +119,7 @@ export default function ResourcesPage() {
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Resources</h1>
           <p className="text-[13px] text-slate-500 mt-1">Learn, understand, and participate better. Access guides, legal references, templates, and more.</p>
         </div>
-        <div className="p-4 rounded-2xl bg-violet-50 border border-violet-100 max-w-xs">
+        <div className="p-4 rounded-2xl bg-blue-50 border border-blue-100 max-w-xs">
           <p className="italic text-[12px] text-slate-600 leading-relaxed">"An informed community makes for a fairer tomorrow."</p>
           <p className="text-[10px] text-slate-400 mt-1.5">— Resolvia</p>
         </div>
@@ -133,10 +133,10 @@ export default function ResourcesPage() {
             <button
               key={c.id}
               onClick={() => setCat(c.id)}
-              className={`p-3.5 rounded-2xl border-2 text-left transition-all ${active ? 'border-violet-500 bg-violet-50/60' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+              className={`p-3.5 rounded-2xl border-2 text-left transition-all ${active ? 'border-blue-500 bg-blue-50/60' : 'border-slate-200 bg-white hover:border-slate-300'}`}
             >
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${active ? 'bg-violet-600 text-white' : 'bg-violet-50 text-violet-600'}`}>{c.icon}</div>
-              <p className={`text-[12px] font-black mt-2 leading-tight ${active ? 'text-violet-800' : 'text-slate-700'}`}>{c.label}</p>
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${active ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'}`}>{c.icon}</div>
+              <p className={`text-[12px] font-black mt-2 leading-tight ${active ? 'text-blue-800' : 'text-slate-700'}`}>{c.label}</p>
               <p className="text-[10px] text-slate-400 mt-0.5">{c.count}</p>
             </button>
           );
@@ -150,7 +150,7 @@ export default function ResourcesPage() {
           <Card className="overflow-hidden">
             <div className="grid md:grid-cols-[1fr_300px]">
               <div className="p-6">
-                <Chip tone="violet">
+                <Chip tone="blue">
                   <Star className="w-3 h-3" /> Featured Resource
                 </Chip>
                 <h2 className="text-[22px] font-black text-slate-900 mt-3 leading-tight">
@@ -166,13 +166,13 @@ export default function ResourcesPage() {
                   </BtnPrimary>
                   <button
                     onClick={() => toggleSave('featured')}
-                    className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold transition-all ${saved.has('featured') ? 'border-violet-400 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`}
+                    className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold transition-all ${saved.has('featured') ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`}
                   >
-                    <Bookmark className={`w-3.5 h-3.5 ${saved.has('featured') ? 'fill-violet-600' : ''}`} /> {saved.has('featured') ? 'Saved' : 'Save for Later'}
+                    <Bookmark className={`w-3.5 h-3.5 ${saved.has('featured') ? 'fill-blue-600' : ''}`} /> {saved.has('featured') ? 'Saved' : 'Save for Later'}
                   </button>
                 </div>
                 <div className="flex items-center gap-1.5 mt-6">
-                  <span className="w-2 h-2 rounded-full bg-violet-600" />
+                  <span className="w-2 h-2 rounded-full bg-blue-600" />
                   <span className="w-1.5 h-1.5 rounded-full bg-slate-200" />
                   <span className="w-1.5 h-1.5 rounded-full bg-slate-200" />
                   <span className="w-1.5 h-1.5 rounded-full bg-slate-200" />
@@ -198,7 +198,7 @@ export default function ResourcesPage() {
                 <button
                   type="button"
                   onClick={() => setCat('ALL')}
-                  className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700 cursor-pointer"
+                  className="flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-700 cursor-pointer"
                 >
                   View All <ArrowRight className="w-3 h-3" />
                 </button>
@@ -215,7 +215,7 @@ export default function ResourcesPage() {
                       {r.type === 'Case Study' ? <BookOpen className="w-5 h-5 text-slate-500" /> : r.type === 'Template' ? <FileText className="w-5 h-5 text-slate-500" /> : r.type === 'Reference' ? <Landmark className="w-5 h-5 text-slate-500" /> : <FileCheck className="w-5 h-5 text-slate-500" />}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[12.5px] font-bold text-slate-800 group-hover:text-violet-700 transition-colors truncate">{r.title}</p>
+                      <p className="text-[12.5px] font-bold text-slate-800 group-hover:text-blue-700 transition-colors truncate">{r.title}</p>
                       <p className="text-[10.5px] text-slate-400 truncate mt-0.5">{r.desc}</p>
                       <div className="flex items-center gap-2 mt-1">
                         <Chip tone={TYPE_TONE[r.type]} className="!text-[9px] !px-2 !py-0.5">{r.type}</Chip>
@@ -235,7 +235,7 @@ export default function ResourcesPage() {
                 <button
                   type="button"
                   onClick={() => setCat('ALL')}
-                  className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700 cursor-pointer"
+                  className="flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-700 cursor-pointer"
                 >
                   View All <ArrowRight className="w-3 h-3" />
                 </button>
@@ -251,7 +251,7 @@ export default function ResourcesPage() {
                     }}
                     className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 transition-colors text-left cursor-pointer"
                   >
-                    <span className={`w-7 h-7 rounded-full text-[11px] font-black flex items-center justify-center shrink-0 ${i === 0 ? 'bg-violet-600 text-white' : i === 1 ? 'bg-blue-500 text-white' : i === 2 ? 'bg-emerald-500 text-white' : i === 3 ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                    <span className={`w-7 h-7 rounded-full text-[11px] font-black flex items-center justify-center shrink-0 ${i === 0 ? 'bg-blue-600 text-white' : i === 1 ? 'bg-blue-500 text-white' : i === 2 ? 'bg-emerald-500 text-white' : i === 3 ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
                       {i + 1}
                     </span>
                     <div className="min-w-0 flex-1">
@@ -273,22 +273,22 @@ export default function ResourcesPage() {
               <button
                 type="button"
                 onClick={() => setCat('ALL')}
-                className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700 cursor-pointer"
+                className="flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-700 cursor-pointer"
               >
                 View All <ArrowRight className="w-3 h-3" />
               </button>
             </div>
             <div className="space-y-2">
               {[
-                { icon: <BookOpen className="w-4 h-4" />, tone: 'bg-violet-100 text-violet-600', t: 'Getting Started on Resolvia', s: 'A step-by-step introduction', href: '/how-it-works' },
+                { icon: <BookOpen className="w-4 h-4" />, tone: 'bg-purple-100 text-purple-600', t: 'Getting Started on Resolvia', s: 'A step-by-step introduction', href: '/how-it-works' },
                 { icon: <Users className="w-4 h-4" />, tone: 'bg-blue-100 text-blue-600', t: 'How the Jury Process Works', s: 'Understand jury selection and deliberation', href: '/jury' },
                 { icon: <FileCheck className="w-4 h-4" />, tone: 'bg-emerald-100 text-emerald-600', t: 'Evidence Guidelines', s: 'What evidence is accepted and how to submit', href: '/create' },
-                { icon: <MessageSquare className="w-4 h-4" />, tone: 'bg-emerald-100 text-emerald-600', t: 'Community Guidelines', s: 'Rules for respectful and constructive participation', href: '/messages' },
+                { icon: <MessageSquare className="w-4 h-4" />, tone: 'bg-yellow-100 text-yellow-600', t: 'Community Guidelines', s: 'Rules for respectful and constructive participation', href: '/messages' },
               ].map((x) => (
                 <Link key={x.t} href={x.href} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 transition-colors group">
                   <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${x.tone}`}>{x.icon}</div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[12px] font-bold text-slate-800 group-hover:text-violet-700 transition-colors">{x.t}</p>
+                    <p className="text-[12px] font-bold text-slate-800 group-hover:text-blue-700 transition-colors">{x.t}</p>
                     <p className="text-[10px] text-slate-400 truncate">{x.s}</p>
                   </div>
                   <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
@@ -297,16 +297,16 @@ export default function ResourcesPage() {
             </div>
           </Card>
 
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-violet-50 to-indigo-100 border border-violet-100 p-5">
-            <div className="absolute -right-4 -top-4 w-24 h-24 rounded-full bg-violet-200/50 blur-2xl" />
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-100 border border-blue-100 p-5">
+            <div className="absolute -right-4 -top-4 w-24 h-24 rounded-full bg-blue-200/50 blur-2xl" />
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-violet-600 text-white flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0">
                 <GraduationCap className="w-5 h-5" />
               </div>
               <h3 className="text-[15px] font-black text-slate-900">New to Resolvia?</h3>
             </div>
             <p className="text-[12px] text-slate-500 mt-3 leading-relaxed">Check out our beginner&apos;s guide to get started.</p>
-            <Link href="/how-it-works" className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-colors">
+            <Link href="/how-it-works" className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors">
               Start Learning <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -370,7 +370,7 @@ export default function ResourcesPage() {
               </button>
               <button
                 onClick={() => setActiveResource(null)}
-                className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold cursor-pointer transition-colors"
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold cursor-pointer transition-colors"
               >
                 Done Reading
               </button>

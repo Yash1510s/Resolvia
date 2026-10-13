@@ -265,7 +265,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <footer className="border-t border-slate-200 bg-white px-4 sm:px-8 py-6">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-violet-500 to-indigo-600 flex items-center justify-center shadow-md shadow-violet-900/20">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center shadow-md shadow-blue-900/20">
                 <Scale className="w-4 h-4 text-white" />
               </div>
               <div>
@@ -274,14 +274,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-semibold text-slate-600">
-              <Link href="/" className="hover:text-violet-600">Home</Link>
-              <Link href="/about" className="hover:text-violet-600">About</Link>
-              <Link href="/how-it-works" className="hover:text-violet-600">How It Works</Link>
-              <Link href="/case-studies" className="hover:text-violet-600">Case Studies</Link>
-              <Link href="/proof-verifier" className="hover:text-violet-600">Proof Verifier</Link>
-              <Link href="/resources" className="hover:text-violet-600">Resources</Link>
-              <Link href="/privacy" className="hover:text-violet-600">Privacy</Link>
-              <Link href="/terms" className="hover:text-violet-600">Terms</Link>
+              <Link href="/" className="hover:text-blue-600">Home</Link>
+              <Link href="/about" className="hover:text-blue-600">About</Link>
+              <Link href="/how-it-works" className="hover:text-blue-600">How It Works</Link>
+              <Link href="/case-studies" className="hover:text-blue-600">Case Studies</Link>
+              <Link href="/proof-verifier" className="hover:text-blue-600">Proof Verifier</Link>
+              <Link href="/resources" className="hover:text-blue-600">Resources</Link>
+              <Link href="/privacy" className="hover:text-blue-600">Privacy</Link>
+              <Link href="/terms" className="hover:text-blue-600">Terms</Link>
             </div>
             <p className="text-[11px] text-slate-400">© 2026 Resolvia Protocol. All rights reserved.</p>
           </div>

@@ -38,9 +38,9 @@ export default function Root() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0b132b] flex flex-col">
+    <div className="min-h-screen bg-white flex flex-col">
       {/* Public top bar */}
-      <PublicNav dark active="home" />
+      <PublicNav active="home" />
 
       <div id="how-it-works" className="flex-1">
         <LandingPage
